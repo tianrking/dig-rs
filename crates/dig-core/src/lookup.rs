@@ -3,6 +3,7 @@
 //! Handles the actual DNS query execution and result collection
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hickory_proto::op::{Message, MessageType, OpCode, Query};
@@ -348,18 +349,179 @@ impl DigLookup {
 
     /// Send query via DNS-over-TLS
     async fn send_tls(&self, server: &SocketAddr, message: &Message) -> Result<Vec<u8>> {
-        // For now, fall back to TCP
-        // TODO: Implement proper TLS with rustls
-        debug!("TLS not fully implemented, falling back to TCP");
-        self.send_tcp(server, message).await
+        #[cfg(all(feature = "dot", any(feature = "tokio-rustls")))]
+        {
+            use tokio_rustls::TlsConnector;
+            use rustls::ClientConfig;
+            use rustls_pemfile::{certs, private_key};
+            use std::io::BufReader;
+
+            // Build TLS connector
+            let mut roots = rustls::RootCertStore::empty();
+            for cert in webpki_roots::TLS_SERVER_ROOTS.iter().cloned() {
+                roots.add(cert).unwrap();
+            }
+
+            let config = ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+
+            let connector = TlsConnector::from(Arc::new(config));
+            let server_name = server.ip().to_string().clone();
+
+            // Encode the message with 2-byte length prefix
+            let mut buf = Vec::with_capacity(65535);
+            {
+                let mut encoder = BinEncoder::new(&mut buf);
+                message.emit(&mut encoder)
+                    .map_err(|e| DigError::ProtocolError(format!("Failed to encode message: {}", e)))?;
+            }
+
+            // Prepend length
+            let len = buf.len() as u16;
+            let mut packet = vec![(len >> 8) as u8, len as u8];
+            packet.extend_from_slice(&buf);
+
+            let timeout = self.config.timeout;
+            tokio::time::timeout(
+                timeout,
+                async {
+                    // Connect to server
+                    let stream = tokio::net::TcpStream::connect(server).await?;
+
+                    // Wrap in TLS
+                    let tls_stream = connector.connect(
+                        rustls::ServerName::try_from(server_name.as_str())
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?,
+                        stream
+                    ).await?;
+
+                    let (mut reader, mut writer) = tokio::io::split(tls_stream);
+
+                    // Send the query
+                    use tokio::io::{AsyncWriteExt, AsyncReadExt};
+                    writer.write_all(&packet).await?;
+                    writer.flush()?;
+
+                    // Read the response length
+                    let mut len_buf = [0u8; 2];
+                    reader.read_exact(&mut len_buf).await?;
+                    let response_len = ((len_buf[0] as u16) << 8) | (len_buf[1] as u16);
+
+                    // Read the response
+                    let mut response = vec![0u8; response_len as usize];
+                    reader.read_exact(&mut response).await?;
+
+                    Ok::<Vec<u8>, std::io::Error>(response)
+                }
+            )
+            .await
+            .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
+            .map_err(|e| DigError::NetworkError(e.to_string()))
+        }
+
+        #[cfg(not(all(feature = "dot", any(feature = "tokio-rustls"))))]
+        {
+            debug!("DoT feature not enabled, falling back to TCP");
+            self.send_tcp(server, message).await
+        }
     }
 
     /// Send query via DNS-over-HTTPS
     async fn send_https(&self, server: &SocketAddr, message: &Message) -> Result<Vec<u8>> {
-        // For now, fall back to TCP
-        // TODO: Implement DoH with reqwest
-        debug!("HTTPS not fully implemented, falling back to TCP");
-        self.send_tcp(server, message).await
+        #[cfg(feature = "doh")]
+        {
+            use base64::Engine;
+            use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+
+            // Get server config for DoH options
+            let server_config = self.config.servers.iter()
+                .find(|s| s.address.parse::<IpAddr>().map(|ip| SocketAddr::new(ip, s.port)) == Ok(*server));
+
+            let https_path = server_config
+                .and_then(|s| s.https_path.as_ref())
+                .map(|s| s.as_str())
+                .unwrap_or("/dns-query");
+
+            let use_get = server_config
+                .map(|s| s.https_get)
+                .unwrap_or(false);
+
+            // Encode the message
+            let mut buf = Vec::with_capacity(4096);
+            {
+                let mut encoder = BinEncoder::new(&mut buf);
+                message.emit(&mut encoder)
+                    .map_err(|e| DigError::ProtocolError(format!("Failed to encode message: {}", e)))?;
+            }
+
+            let timeout = self.config.timeout;
+            tokio::time::timeout(
+                timeout,
+                async {
+                    // Build HTTP client
+                    let client = reqwest::Client::builder()
+                        .use_rustls_tls()
+                        .build()
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+                    let host = if server.port() == 443 {
+                        format!("https://{}", server.ip())
+                    } else {
+                        format!("https://{}:{}", server.ip(), server.port())
+                    };
+
+                    if use_get {
+                        // Use GET method with base64-encoded DNS query
+                        let dns_query = BASE64_URL_SAFE_NO_PAD.encode(&buf);
+                        let url = format!("{}{}?dns={}", host, https_path, dns_query);
+
+                        let response = client
+                            .get(&url)
+                            .header("Accept", "application/dns-message")
+                            .send()
+                            .await
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+                        let data = response
+                            .bytes()
+                            .await
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+                        Ok::<Vec<u8>, std::io::Error>(data.to_vec())
+                    } else {
+                        // Use POST method with binary DNS message
+                        let url = format!("{}{}", host, https_path);
+
+                        let response = client
+                            .post(&url)
+                            .header("Accept", "application/dns-message")
+                            .header("Content-Type", "application/dns-message")
+                            .body(buf.clone())
+                            .send()
+                            .await
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+                        let data = response
+                            .bytes()
+                            .await
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+                        Ok::<Vec<u8>, std::io::Error>(data.to_vec())
+                    }
+                }
+            )
+            .await
+            .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
+            .map_err(|e| DigError::NetworkError(e.to_string()))
+        }
+
+        #[cfg(not(feature = "doh"))]
+        {
+            debug!("DoH feature not enabled, falling back to TCP");
+            self.send_tcp(server, message).await
+        }
     }
 
     /// Parse the DNS response

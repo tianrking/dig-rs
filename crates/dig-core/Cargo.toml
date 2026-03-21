@@ -24,6 +24,19 @@ hmac = "0.12"
 sha-1 = "0.10"
 sha2 = "0.10"
 
+# Modern DNS transports (optional)
+tokio-rustls = { version = "0.26", optional = true }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "tls12"] }
+rustls-pemfile = { version = "2.1", optional = true }
+webpki-roots = { version = "0.26", optional = true }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls"] }
+
+[features]
+default = []
+dot = ["tokio-rustls", "rustls", "rustls-pemfile", "webpki-roots"]
+doh = ["reqwest"]
+modern = ["dot", "doh"]
+
 [dev-dependencies]
 tokio-test = "0.4"
 criterion = "0.5"

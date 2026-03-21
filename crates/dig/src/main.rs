@@ -83,8 +83,7 @@ fn build_cli() -> Command {
         .arg(Arg::new("args")
             .help("Arguments: [@SERVER] [NAME] [TYPE]")
             .value_name("ARGS")
-            .num_args(1..)
-            .required(true))
+            .num_args(1..))
         // ===== CORE DIFFERENTIATORS =====
         .arg(Arg::new("json")
             .long("json")
@@ -236,7 +235,20 @@ fn build_cli() -> Command {
 
 /// Main program logic
 fn run(matches: &clap::ArgMatches) -> Result<(), DigError> {
-    // Build configuration
+    // Check for batch mode first (doesn't require args)
+    if matches.contains_id("file") {
+        if let Some(file) = matches.get_one::<String>("file") {
+            // Build minimal config for batch mode
+            let config = if let Some(args) = matches.get_many::<String>("args") {
+                build_config(matches)?
+            } else {
+                DigConfig::default()
+            };
+            return run_batch(file, &config);
+        }
+    }
+
+    // Build configuration for other modes
     let config = build_config(matches)?;
 
     // Health check mode
@@ -252,13 +264,6 @@ fn run(matches: &clap::ArgMatches) -> Result<(), DigError> {
     // Trace mode
     if config.trace {
         return run_trace(config);
-    }
-
-    // Batch mode
-    if matches.contains_id("file") {
-        if let Some(file) = matches.get_one::<String>("file") {
-            return run_batch(file, &config);
-        }
     }
 
     // Standard query mode
@@ -533,29 +538,15 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
         }
     }
 
-    // Parse name
-    if let Some(name) = matches.get_one::<String>("name") {
-        config.name = name.clone();
-    }
-
-    // Parse query type
-    if let Some(qtype) = matches.get_one::<String>("type") {
-        config.query_type = qtype.clone();
-    } else if !config.name.is_empty() {
-        config.query_type = "A".to_string();
+    // Set default query type if name is set but type is not
+    if !config.name.is_empty() && config.query_type == "A" {
+        // Keep the default A type
     }
 
     // Parse class
     if let Some(class) = matches.get_one::<String>("class") {
         config.query_class = class.parse()
             .map_err(|_| DigError::ConfigError(format!("Invalid class: {}", class)))?;
-    }
-
-    // Parse reverse lookup
-    if let Some(ip) = matches.get_one::<String>("reverse") {
-        config.name = ip.clone();
-        config.query_type = "PTR".to_string();
-        config.reverse = true;
     }
 
     // Parse transport options
@@ -685,7 +676,7 @@ fn format_output(
 }
 
 /// Run trace mode
-fn run_trace(mut config: DigConfig) -> Result<(), DigError> {
+fn run_trace(config: DigConfig) -> Result<(), DigError> {
     let trace = DnsTrace::new(config.clone());
 
     let rt = tokio::runtime::Runtime::new()
@@ -693,39 +684,104 @@ fn run_trace(mut config: DigConfig) -> Result<(), DigError> {
 
     let result = rt.block_on(trace.trace())?;
 
-    // Print trace results
-    println!(";; Tracing query for {} {}", result.query_name, result.query_type);
+    // Print trace results with enhanced formatting
+    println!("{}", "DNS Trace Results".bold().cyan());
+    println!("Query: {} ({})", result.query_name, result.query_type);
+    println!("Total time: {}ms", result.total_time_ms);
+    println!("Hops: {}", result.steps.len());
     println!();
 
     for (i, step) in result.steps.iter().enumerate() {
-        println!(";; Step {}: Querying {} ({}ms)",
-            i + 1, step.server, step.query_time_ms);
-        println!(";;   Query: {}", step.query);
-        println!(";;   Response: {}", step.response.rcode);
+        let hop_num = format!("Hop {}", i + 1).bold();
+        println!("{}: {} ({})", hop_num, step.server.dimmed(), step.server_type.cyan());
 
+        // Show zone if available
+        if let Some(zone) = &step.zone {
+            println!("     Zone: {}", zone.dimmed());
+        }
+
+        // Show timing with color coding
+        let time = step.query_time_ms;
+        let time_str = if time < 50 {
+            format!("{}ms", time).green()
+        } else if time < 200 {
+            format!("{}ms", time).yellow()
+        } else {
+            format!("{}ms", time).red()
+        };
+        println!("     Time: {}", time_str);
+
+        // Show response status
+        let status = if step.response.rcode == "NoError" {
+            "✓".green()
+        } else {
+            "✗".red()
+        };
+        println!("     Status: {} {}", status, step.response.rcode);
+
+        // Show answer if present
         if !step.response.answer.is_empty() {
-            println!(";;   Answer:");
+            println!("     {}", "Answer:".bold());
             for a in &step.response.answer {
-                println!(";;     {}", a);
+                println!("       • {}", a);
             }
         }
 
+        // Show authority/referral
         if !step.response.authority.is_empty() {
-            println!(";;   Authority (referral):");
+            println!("     {}", "Referral:".bold());
             for a in &step.response.authority {
-                println!(";;     {}", a);
+                println!("       → {}", a);
+            }
+        }
+
+        // Show additional/glue records
+        if !step.response.additional.is_empty() {
+            println!("     {}", "Glue:".bold());
+            for a in &step.response.additional {
+                println!("       + {}", a);
             }
         }
 
         println!();
     }
 
-    if let Some(final_answer) = &result.final_answer {
-        println!(";; Final Answer:");
-        let output = format_output(final_answer, &config.output)?;
-        println!("{}", output);
+    // Summary statistics
+    println!("{}", "Summary".bold().cyan());
+    let total_time = result.total_time_ms;
+    let avg_time = if result.steps.is_empty() {
+        0
     } else {
-        println!(";; No final answer received");
+        result.steps.iter().map(|s| s.query_time_ms).sum::<u64>() / result.steps.len() as u64
+    };
+    let max_time = result.steps.iter().map(|s| s.query_time_ms).max().unwrap_or(0);
+
+    println!("  Total time: {}ms", total_time);
+    println!("  Average per hop: {}ms", avg_time);
+    println!("  Slowest hop: {}ms", max_time);
+    println!("  Hops to answer: {}", result.steps.len());
+
+    if let Some(final_answer) = &result.final_answer {
+        println!();
+        println!("{}", "Final Answer:".bold());
+        println!("  Records: {}", final_answer.message.answer.len());
+        println!("  Server: {}", final_answer.server);
+
+        // Show actual answer records
+        if !final_answer.message.answer.is_empty() {
+            println!();
+            for record in &final_answer.message.answer {
+                println!("  {} {} IN {} {}",
+                    record.name,
+                    record.ttl,
+                    record.rtype,
+                    record.rdata
+                );
+            }
+        }
+    } else {
+        println!();
+        println!("{}", "Warning: No final answer received".yellow());
     }
 
     println!(";; Total trace time: {}ms", result.total_time_ms);

@@ -63,6 +63,10 @@ pub struct TraceStep {
     pub response: TraceResponse,
     /// Time taken for this query
     pub query_time_ms: u64,
+    /// Zone being queried at this step
+    pub zone: Option<String>,
+    /// Server type (root, tld, authoritative, etc.)
+    pub server_type: String,
 }
 
 /// Simplified trace response
@@ -175,12 +179,15 @@ impl DnsTrace {
             if !response.answers().is_empty() {
                 // We got an answer!
                 let trace_response = self.parse_trace_response(&response);
+                let server_type = self.classify_server(&current_zone);
 
                 steps.push(TraceStep {
                     server: format!("{}", server),
                     query: format!("{} {}", query_name, hickory_type),
                     response: trace_response,
                     query_time_ms: query_time.as_millis() as u64,
+                    zone: Some(current_zone.to_string()),
+                    server_type,
                 });
 
                 // Build final result
@@ -199,12 +206,15 @@ impl DnsTrace {
             let (next_servers, next_zone) = self.extract_referral(&response, &current_zone);
 
             let trace_response = self.parse_trace_response(&response);
+            let server_type = self.classify_server(&current_zone);
 
             steps.push(TraceStep {
                 server: format!("{}", server),
                 query: format!("{} {}", query_name, hickory_type),
                 response: trace_response,
                 query_time_ms: query_time.as_millis() as u64,
+                zone: Some(current_zone.to_string()),
+                server_type,
             });
 
             if next_servers.is_empty() {
@@ -473,6 +483,22 @@ impl DnsTrace {
                 rdata: crate::lookup::DigLookup::format_rdata(r.data()),
             })
             .collect()
+    }
+
+    /// Classify the type of server being queried
+    fn classify_server(&self, zone: &Name) -> String {
+        let zone_str = zone.to_ascii();
+
+        if zone_str == "." {
+            "Root Server".to_string()
+        } else if zone_str.ends_with(".arpa.") || zone_str.split('.').count() == 2 {
+            // TLD servers (e.g., com., net., org.)
+            "TLD Server".to_string()
+        } else if zone_str.split('.').count() == 3 {
+            "Authoritative Server".to_string()
+        } else {
+            format!("Zone Server ({})", zone_str)
+        }
     }
 
     /// Convert our RecordType to hickory's RecordType
