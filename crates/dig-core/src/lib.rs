@@ -14,12 +14,16 @@ pub mod lookup;
 pub mod record;
 pub mod resolver;
 pub mod trace;
+pub mod tsig;
+pub mod zonetransfer;
 
 pub use config::DigConfig;
 pub use error::{DigError, Result};
 pub use lookup::{DigLookup, LookupResult};
 pub use record::RecordType;
 pub use resolver::DigResolver;
+pub use tsig::{TsigKey, TsigAlgorithm, TsigConfig, TsigSigner};
+pub use zonetransfer::{ZoneTransfer, ZoneTransferType, ZoneTransferResult};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
