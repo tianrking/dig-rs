@@ -1,0 +1,24 @@
+# Code Owners for dig-rs
+
+# Default code owner
+* @tianrking
+
+# CI/CD
+.github/** @tianrking
+
+# Documentation
+*.md @tianrking
+docs/** @tianrking
+
+# Core library
+crates/dig-core/** @tianrking
+
+# Output formatting
+crates/dig-output/** @tianrking
+
+# CLI
+crates/dig/** @tianrking
+
+# Tests
+tests/** @tianrking
+benches/** @tianrking
