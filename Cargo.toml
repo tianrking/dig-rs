@@ -65,11 +65,3 @@ lto = true
 codegen-units = 1
 strip = true
 opt-level = 3
-
-[dev-dependencies]
-criterion = "0.5"
-serial_test = "3"
-
-[[bench]]
-name = "dns_benchmark"
-harness = false

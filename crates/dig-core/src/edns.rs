@@ -42,14 +42,14 @@ pub enum EdnsOptionCode {
     Chain = 13,
     /// Key Tag - RFC 8145
     KeyTag = 14,
-    /// Client Tag - UNASSIGNED
-    ClientTag = 15,
+    /// Extended Error - RFC 8914
+    ExtendedError = 15,
+    /// Client Tag - UNASSIGNED (removed to avoid conflict)
+    // ClientTag was 15 but conflicts with ExtendedError
     /// Server Tag - UNASSIGNED
     ServerTag = 16,
     /// DNSSEC Scheme - UNASSIGNED
     DnssecScheme = 17,
-    /// Extended Error - RFC 8914
-    ExtendedError = 15,
 }
 
 impl EdnsOptionCode {
@@ -383,7 +383,7 @@ impl ExtendedErrorOption {
 
     /// Convert to EDNS option
     pub fn to_edns_option(&self) -> EdnsOption {
-        let mut data = vec![(info_code >> 8) as u8, (info_code & 0xFF) as u8];
+        let mut data = vec![(self.info_code >> 8) as u8, (self.info_code & 0xFF) as u8];
         data.extend_from_slice(self.extra_text.as_bytes());
         EdnsOption::new(EdnsOptionCode::ExtendedError, data)
     }

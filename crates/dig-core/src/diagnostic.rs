@@ -442,7 +442,7 @@ impl DnsDiagnostic {
                 CheckResult {
                     name: "CDN Detection".to_string(),
                     description: "Content Delivery Network detection".to_string(),
-                    CheckStatus::Pass,
+                    status: CheckStatus::Pass,
                     value: Some(cdn_info),
                     expected: None,
                 }

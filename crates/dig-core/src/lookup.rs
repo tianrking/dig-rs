@@ -285,7 +285,7 @@ impl DigLookup {
 
         let socket = UdpSocket::bind(local_addr)
             .await
-            .map_err(|e| DigError::NetworkError(e))?;
+            .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
         // Set timeout
         let timeout = self.config.timeout;
@@ -301,7 +301,7 @@ impl DigLookup {
         )
         .await
         .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
-        .map_err(DigError::NetworkError)
+        .map_err(|e| DigError::NetworkError(e.to_string()))
     }
 
     /// Send query via TCP
@@ -343,7 +343,7 @@ impl DigLookup {
         )
         .await
         .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
-        .map_err(DigError::NetworkError)
+        .map_err(|e| DigError::NetworkError(e.to_string()))
     }
 
     /// Send query via DNS-over-TLS

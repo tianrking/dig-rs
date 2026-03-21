@@ -89,7 +89,7 @@ impl BatchProcessor {
     /// Process queries from a file
     pub fn process_file<P: AsRef<Path>>(&self, path: P) -> Result<Vec<BatchResult>> {
         let file = File::open(path.as_ref())
-            .map_err(|e| DigError::IoError(format!("Failed to open batch file: {}", e)))?;
+            .map_err(|e| DigError::NetworkError(format!("Failed to open batch file: {}", e)))?;
 
         let queries = self.parse_batch_file(file)?;
         info!("Loaded {} queries from batch file", queries.len());
@@ -111,7 +111,7 @@ impl BatchProcessor {
 
         for line in reader.lines() {
             line_number += 1;
-            let line = line.map_err(|e| DigError::IoError(format!("Failed to read line: {}", e)))?;
+            let line = line.map_err(|e| DigError::NetworkError(format!("Failed to read line: {}", e)))?;
 
             let line = line.trim();
 
@@ -160,22 +160,23 @@ impl BatchProcessor {
 
         let mut i = 0;
         while i < parts.len() {
-            match parts[i] {
-                s if s.starts_with('@') => {
-                    server = Some(s[1..].to_string());
+            let s = parts[i];
+            match s {
+                addr if addr.starts_with('@') => {
+                    server = Some(addr[1..].to_string());
                 }
-                s if s.parse::<QueryOption>().is_ok() => {
+                opt if opt.parse::<QueryOption>().is_ok() => {
                     // Skip options for now
                     // In full implementation, would parse these
                 }
-                s if domain.is_empty() => {
-                    domain = s.to_string();
+                typ if qtype == "A" && self.is_record_type(typ) => {
+                    qtype = typ.to_uppercase();
                 }
-                s if qtype == "A" && self.is_record_type(s) => {
-                    qtype = s.to_uppercase();
+                cls if qclass.is_none() && self.is_query_class(cls) => {
+                    qclass = Some(cls.to_uppercase());
                 }
-                s if qclass.is_none() && self.is_query_class(s) => {
-                    qclass = Some(s.to_uppercase());
+                domain_part if domain.is_empty() => {
+                    domain = domain_part.to_string();
                 }
                 _ => {
                     // Unknown part, treat as domain if not set
@@ -274,13 +275,14 @@ impl BatchProcessor {
                     let result = rt.block_on(execute_query_async(&query, &base_config));
                     let exec_time = start.elapsed().as_millis() as u64;
 
+                    let result_clone = result.clone();
                     local_results.push(BatchResult {
                         query: query.clone(),
                         result,
                         exec_time_ms: exec_time,
                     });
 
-                    if !continue_on_error && result.is_err() {
+                    if !continue_on_error && result_clone.is_err() {
                         break;
                     }
                 }
@@ -351,7 +353,7 @@ enum QueryOption {
 impl std::str::FromStr for QueryOption {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "+short" => Ok(QueryOption::Short),
             "+tcp" => Ok(QueryOption::Tcp),

@@ -286,7 +286,7 @@ impl DnsTrace {
 
         let socket = UdpSocket::bind(local_addr)
             .await
-            .map_err(DigError::NetworkError)?;
+            .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
         let timeout = self.timeout;
         let response_data = tokio::time::timeout(
@@ -301,7 +301,7 @@ impl DnsTrace {
         )
         .await
         .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
-        .map_err(DigError::NetworkError)?;
+        .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
         // Parse response
         let mut decoder = BinDecoder::new(&response_data);

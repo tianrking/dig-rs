@@ -1,12 +1,13 @@
 //! Error types for dig-core
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Result type alias for dig operations
 pub type Result<T> = std::result::Result<T, DigError>;
 
 /// Comprehensive error type for DNS operations
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DigError {
     #[error("DNS query failed: {0}")]
     QueryFailed(String),
@@ -33,7 +34,7 @@ pub enum DigError {
     DnssecValidationFailed(String),
 
     #[error("Network error: {0}")]
-    NetworkError(#[from] std::io::Error),
+    NetworkError(String),
 
     #[error("Protocol error: {0}")]
     ProtocolError(String),
@@ -59,5 +60,23 @@ impl DigError {
             DigError::DnssecValidationFailed(_) => 5,
             _ => 10,
         }
+    }
+}
+
+impl From<std::io::Error> for DigError {
+    fn from(err: std::io::Error) -> Self {
+        DigError::NetworkError(err.to_string())
+    }
+}
+
+impl From<crate::tsig::TsigError> for DigError {
+    fn from(err: crate::tsig::TsigError) -> Self {
+        DigError::ConfigError(format!("TSIG error: {}", err))
+    }
+}
+
+impl From<crate::edns::EdnsError> for DigError {
+    fn from(err: crate::edns::EdnsError) -> Self {
+        DigError::ConfigError(format!("EDNS error: {}", err))
     }
 }

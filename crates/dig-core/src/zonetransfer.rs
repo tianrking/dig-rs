@@ -36,7 +36,7 @@ impl std::fmt::Display for ZoneTransferType {
 impl std::str::FromStr for ZoneTransferType {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "AXFR" => Ok(ZoneTransferType::AXFR),
             "IXFR" => Ok(ZoneTransferType::IXFR),
@@ -231,10 +231,10 @@ impl ZoneTransfer {
         )
         .await
         .map_err(|_| DigError::Timeout(self.config.timeout.as_millis() as u64))?
-        .map_err(DigError::NetworkError)?;
+        .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
         stream.write_all(&packet).await
-            .map_err(DigError::NetworkError)?;
+            .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
         // Read response(s)
         // AXFR returns multiple messages
@@ -245,7 +245,7 @@ impl ZoneTransfer {
             let mut len_buf = [0u8; 2];
             tokio::time::timeout(self.config.timeout, stream.read_exact(&mut len_buf)).await
                 .map_err(|_| DigError::Timeout(self.config.timeout.as_millis() as u64))?
-                .map_err(DigError::NetworkError)?;
+                .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
             let msg_len = ((len_buf[0] as u16) << 8) | (len_buf[1] as u16);
 
@@ -253,7 +253,7 @@ impl ZoneTransfer {
             let mut msg_buf = vec![0u8; msg_len as usize];
             tokio::time::timeout(self.config.timeout, stream.read_exact(&mut msg_buf)).await
                 .map_err(|_| DigError::Timeout(self.config.timeout.as_millis() as u64))?
-                .map_err(DigError::NetworkError)?;
+                .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
             // Parse message
             use hickory_proto::serialize::binary::BinDecodable;

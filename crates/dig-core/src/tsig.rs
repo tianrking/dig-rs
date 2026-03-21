@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, warn};
 
-use crate::error::Result;
+use crate::error::{DigError, Result};
 
 /// TSIG authentication errors
 #[derive(Debug, Error)]
@@ -44,7 +44,7 @@ impl TsigAlgorithm {
     /// Parse algorithm from string
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_uppercase().as_str() {
-            "HMAC-MD5.SIG-ALG.REG.INT" | "MD5" | "HMACMD5" => Some(TsigAlgorithm::HMACMD5),
+            "HMAC-MD5.SIG-ALG.REG.INT" | "MD5" | "HMACMD5" | "HMAC-MD5" => Some(TsigAlgorithm::HMACMD5),
             "HMAC-SHA1" | "SHA1" | "HMACSHA1" => Some(TsigAlgorithm::HMACSHA1),
             "HMAC-SHA224" | "SHA224" | "HMACSHA224" => Some(TsigAlgorithm::HMACSHA224),
             "HMAC-SHA256" | "SHA256" | "HMACSHA256" => Some(TsigAlgorithm::HMACSHA256),
@@ -131,26 +131,26 @@ impl TsigKey {
     /// Parse TSIG key from file format (BIND key file)
     ///
     /// File format:
-    /// ```
+    /// ```text
     /// key "name" {
     ///     algorithm "algorithm";
     ///     secret "base64key";
     /// };
     /// ```
-    pub fn from_file_format(content: &str) -> Result<Self> {
+    pub fn from_file_format(content: &str) -> std::result::Result<Self, TsigError> {
         let content = content.trim();
 
         // Extract key name
         let name_start = content.find("key \"")
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
-        let name_end = content[name_start + 5..].find("\"")
+        let name_end = content[name_start + 5..].find('"')
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
         let name = content[name_start + 5..name_start + 5 + name_end].to_string();
 
         // Extract algorithm
         let alg_start = content.find("algorithm \"")
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
-        let alg_end = content[alg_start + 11..].find("\"")
+        let alg_end = content[alg_start + 11..].find('"')
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
         let algorithm_str = &content[alg_start + 11..alg_start + 11 + alg_end];
         let algorithm = TsigAlgorithm::from_str(algorithm_str)
@@ -159,9 +159,9 @@ impl TsigKey {
         // Extract secret
         let secret_start = content.find("secret \"")
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
-        let secret_end = content[secret_start + 9..].find("\"")
+        let secret_end = content[secret_start + 8..].find('"')
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
-        let key = content[secret_start + 9..secret_start + 9 + secret_end].to_string();
+        let key = content[secret_start + 8..secret_start + 8 + secret_end].to_string();
 
         Ok(Self {
             name,
@@ -171,7 +171,7 @@ impl TsigKey {
     }
 
     /// Get the decoded key bytes
-    pub fn key_bytes(&self) -> Result<Vec<u8>> {
+    pub fn key_bytes(&self) -> std::result::Result<Vec<u8>, TsigError> {
         // Try base64 first
         if let Ok(decoded) = base64_decode(&self.key) {
             return Ok(decoded);
@@ -186,31 +186,31 @@ impl TsigKey {
         if self.key.len() >= 16 {
             Ok(self.key.as_bytes().to_vec())
         } else {
-            Err(TsigError::InvalidKeyFormat.into())
+            Err(TsigError::InvalidKeyFormat)
         }
     }
 }
 
 /// Simple base64 decode
-fn base64_decode(input: &str) -> Result<Vec<u8>> {
+fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, TsigError> {
     use base64::{Engine as _, engine::general_purpose};
     general_purpose::STANDARD
         .decode(input)
-        .map_err(|e| TsigError::SigningError(e.to_string()).into())
+        .map_err(|e| TsigError::SigningError(e.to_string()))
 }
 
 /// Simple hex decode
-fn hex_decode(input: &str) -> Result<Vec<u8>> {
+fn hex_decode(input: &str) -> std::result::Result<Vec<u8>, TsigError> {
     let input = input.trim_start_matches("0x");
     if input.len() % 2 != 0 {
-        return Err(TsigError::InvalidKeyFormat.into());
+        return Err(TsigError::InvalidKeyFormat);
     }
 
     (0..input.len())
         .step_by(2)
         .map(|i| {
             u8::from_str_radix(&input[i..i + 2], 16)
-                .map_err(|e| TsigError::SigningError(e.to_string()).into())
+                .map_err(|e| TsigError::SigningError(e.to_string()))
         })
         .collect()
 }
