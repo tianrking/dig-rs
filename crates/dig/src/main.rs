@@ -78,18 +78,13 @@ fn build_cli() -> Command {
                dig-rs example.com --compare 8.8.8.8 1.1.1.1  -- Compare resolvers"
         )
         // Positional arguments (dig-compatible)
-        .arg(Arg::new("server")
-            .help("DNS server to query (prefix with @)")
-            .value_name("@SERVER")
-            .index(1))
-        .arg(Arg::new("name")
-            .help("Domain name to query")
-            .value_name("NAME")
-            .index(2))
-        .arg(Arg::new("type")
-            .help("Query type (A, AAAA, MX, etc.)")
-            .value_name("TYPE")
-            .index(3))
+        // We collect all remaining arguments and parse them manually
+        // to handle the @server, name, and type in any order
+        .arg(Arg::new("args")
+            .help("Arguments: [@SERVER] [NAME] [TYPE]")
+            .value_name("ARGS")
+            .num_args(1..)
+            .required(true))
         // ===== CORE DIFFERENTIATORS =====
         .arg(Arg::new("json")
             .long("json")
@@ -176,8 +171,9 @@ fn build_cli() -> Command {
             .action(ArgAction::SetTrue))
         .arg(Arg::new("doh")
             .long("doh")
+            .short('H')
             .help("DNS-over-HTTPS")
-            .value_name("URL"))
+            .action(ArgAction::SetTrue))
         // ===== OUTPUT OPTIONS =====
         .arg(Arg::new("short")
             .long("short")
@@ -516,12 +512,24 @@ fn run_standard_query(config: DigConfig) -> Result<(), DigError> {
 fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
     let mut config = DigConfig::default();
 
-    // Parse server (@server)
-    if let Some(server_arg) = matches.get_one::<String>("server") {
-        let server_str = server_arg.trim_start_matches('@');
-        if let Some(server_config) = ServerConfig::parse(&format!("@{}", server_str)) {
-            config.servers.push(server_config);
-            config.use_system_servers = false;
+    // Parse arguments manually to handle [@server] [name] [type] order
+    if let Some(args) = matches.get_many::<String>("args") {
+        let args: Vec<&String> = args.collect();
+
+        for arg in &args {
+            if arg.starts_with('@') {
+                // Server argument
+                if let Some(server_config) = ServerConfig::parse(arg) {
+                    config.servers.push(server_config);
+                    config.use_system_servers = false;
+                }
+            } else if config.name.is_empty() {
+                // First non-@ argument is the domain name
+                config.name = (**arg).clone();
+            } else {
+                // Second non-@ argument is the query type
+                config.query_type = (**arg).clone();
+            }
         }
     }
 
