@@ -8,7 +8,9 @@
 //! - Structured error handling
 //! - Cross-platform support (Windows, Linux, macOS)
 
+pub mod batch;
 pub mod config;
+pub mod edns;
 pub mod error;
 pub mod lookup;
 pub mod record;
@@ -17,7 +19,9 @@ pub mod trace;
 pub mod tsig;
 pub mod zonetransfer;
 
+pub use batch::{BatchProcessor, BatchConfig, BatchQuery, BatchResult};
 pub use config::DigConfig;
+pub use edns::{EdnsOption, EdnsOptionCode, CookieOption, NsidOption, SubnetOption};
 pub use error::{DigError, Result};
 pub use lookup::{DigLookup, LookupResult};
 pub use record::RecordType;
