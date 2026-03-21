@@ -16,13 +16,13 @@ use tracing::{debug, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use dig_core::config::{DigConfig, OutputFormat, QueryClass, ServerConfig, Transport};
-use dig_core::diagnostic::{DnsDiagnostic, DiagnosticConfig, compare_resolvers};
+use dig_core::diagnostic::{compare_resolvers, DiagnosticConfig, DnsDiagnostic};
 use dig_core::error::DigError;
 use dig_core::lookup::DigLookup;
 use dig_core::trace::DnsTrace;
 use dig_output::{
-    DigFormatter, JsonFormatter, ShortFormatter, TableFormatter,
-    StructuredFormatter, OutputFormatter,
+    DigFormatter, JsonFormatter, OutputFormatter, ShortFormatter, StructuredFormatter,
+    TableFormatter,
 };
 
 /// Program version
@@ -293,8 +293,12 @@ fn run_health_check(config: &DigConfig, matches: &clap::ArgMatches) -> Result<()
     match health.status {
         dig_core::diagnostic::HealthStatus::Healthy => Ok(()),
         dig_core::diagnostic::HealthStatus::Warning => Ok(()),
-        dig_core::diagnostic::HealthStatus::Critical => Err(DigError::QueryFailed("Critical DNS issues detected".into())),
-        dig_core::diagnostic::HealthStatus::Failed => Err(DigError::QueryFailed("DNS resolution failed".into())),
+        dig_core::diagnostic::HealthStatus::Critical => {
+            Err(DigError::QueryFailed("Critical DNS issues detected".into()))
+        }
+        dig_core::diagnostic::HealthStatus::Failed => {
+            Err(DigError::QueryFailed("DNS resolution failed".into()))
+        }
     }
 }
 
@@ -302,7 +306,8 @@ fn run_health_check(config: &DigConfig, matches: &clap::ArgMatches) -> Result<()
 fn print_health_report(health: &dig_core::diagnostic::HealthCheck) {
     println!("{}", "DNS Health Check Report".bold().cyan());
     println!("Domain: {}", health.domain);
-    println!("Status: {}",
+    println!(
+        "Status: {}",
         match health.status {
             dig_core::diagnostic::HealthStatus::Healthy => "✓ Healthy".green(),
             dig_core::diagnostic::HealthStatus::Warning => "⚠ Warning".yellow(),
@@ -336,7 +341,9 @@ fn print_health_report(health: &dig_core::diagnostic::HealthCheck) {
                 dig_core::diagnostic::IssueSeverity::Error => "✗".red(),
                 dig_core::diagnostic::IssueSeverity::Critical => "✗".red().bold(),
             };
-            println!("  {} [{}] {}", severity,
+            println!(
+                "  {} [{}] {}",
+                severity,
                 match issue.severity {
                     dig_core::diagnostic::IssueSeverity::Info => "INFO",
                     dig_core::diagnostic::IssueSeverity::Warning => "WARN",
@@ -361,13 +368,18 @@ fn print_health_report(health: &dig_core::diagnostic::HealthCheck) {
 }
 
 /// Run resolver comparison
-fn run_compare<'a>(config: &DigConfig, resolvers: impl Iterator<Item = &'a String>) -> Result<(), DigError> {
+fn run_compare<'a>(
+    config: &DigConfig,
+    resolvers: impl Iterator<Item = &'a String>,
+) -> Result<(), DigError> {
     let resolver_list: Vec<String> = resolvers
         .map(|r| expand_resolver_alias(r.as_str()))
         .collect();
 
     if resolver_list.is_empty() {
-        return Err(DigError::ConfigError("At least one resolver required for comparison".into()));
+        return Err(DigError::ConfigError(
+            "At least one resolver required for comparison".into(),
+        ));
     }
 
     let rt = tokio::runtime::Runtime::new()
@@ -383,7 +395,9 @@ fn run_compare<'a>(config: &DigConfig, resolvers: impl Iterator<Item = &'a Strin
 
     // Exit with error if inconsistent
     if !result.consistent {
-        Err(DigError::QueryFailed("Resolver inconsistency detected".into()))
+        Err(DigError::QueryFailed(
+            "Resolver inconsistency detected".into(),
+        ))
     } else {
         Ok(())
     }
@@ -412,14 +426,19 @@ fn print_comparison_report(result: &dig_core::diagnostic::ComparisonResult) {
     println!();
 
     println!("{}", "Results:".bold());
-    let max_resolver_len = result.resolver_results
+    let max_resolver_len = result
+        .resolver_results
         .iter()
         .map(|r| r.resolver.len())
         .max()
         .unwrap_or(0);
 
     for resolver_result in &result.resolver_results {
-        let resolver = format!("{:width$}", &resolver_result.resolver, width = max_resolver_len);
+        let resolver = format!(
+            "{:width$}",
+            &resolver_result.resolver,
+            width = max_resolver_len
+        );
 
         if resolver_result.success {
             let latency = if resolver_result.latency_ms < 100 {
@@ -430,13 +449,21 @@ fn print_comparison_report(result: &dig_core::diagnostic::ComparisonResult) {
                 format!("{}", resolver_result.latency_ms.to_string().red())
             };
 
-            println!("  {} → {} ({})", resolver.cyan(),
+            println!(
+                "  {} → {} ({})",
+                resolver.cyan(),
                 resolver_result.answers.join(" ").dimmed(),
                 format!("{}ms", latency)
             );
         } else {
-            println!("  {} → {}", resolver.red(),
-                resolver_result.error.as_ref().unwrap_or(&"Failed".to_string()).red()
+            println!(
+                "  {} → {}",
+                resolver.red(),
+                resolver_result
+                    .error
+                    .as_ref()
+                    .unwrap_or(&"Failed".to_string())
+                    .red()
             );
         }
     }
@@ -456,14 +483,20 @@ fn print_comparison_report(result: &dig_core::diagnostic::ComparisonResult) {
     }
 
     println!();
-    println!("Total query time: {}ms",
-        result.resolver_results.iter().map(|r| r.latency_ms).max().unwrap_or(0)
+    println!(
+        "Total query time: {}ms",
+        result
+            .resolver_results
+            .iter()
+            .map(|r| r.latency_ms)
+            .max()
+            .unwrap_or(0)
     );
 }
 
 /// Run batch mode
 fn run_batch(file: &str, base_config: &DigConfig) -> Result<(), DigError> {
-    use dig_core::batch::{BatchProcessor, BatchConfig};
+    use dig_core::batch::{BatchConfig, BatchProcessor};
 
     let batch_config = BatchConfig::default();
     let processor = BatchProcessor::new(base_config.clone(), batch_config)?;
@@ -545,7 +578,8 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
 
     // Parse class
     if let Some(class) = matches.get_one::<String>("class") {
-        config.query_class = class.parse()
+        config.query_class = class
+            .parse()
             .map_err(|_| DigError::ConfigError(format!("Invalid class: {}", class)))?;
     }
 
@@ -568,7 +602,8 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
 
     // Parse port
     if let Some(port) = matches.get_one::<String>("port") {
-        let port: u16 = port.parse()
+        let port: u16 = port
+            .parse()
             .map_err(|_| DigError::ConfigError(format!("Invalid port: {}", port)))?;
         for server in &mut config.servers {
             server.port = port;
@@ -577,14 +612,16 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
 
     // Parse timeout
     if let Some(timeout) = matches.get_one::<String>("timeout") {
-        let timeout: u64 = timeout.parse()
+        let timeout: u64 = timeout
+            .parse()
             .map_err(|_| DigError::ConfigError(format!("Invalid timeout: {}", timeout)))?;
         config.timeout = Duration::from_secs(timeout);
     }
 
     // Parse retries
     if let Some(retries) = matches.get_one::<String>("retries") {
-        config.retries = retries.parse()
+        config.retries = retries
+            .parse()
             .map_err(|_| DigError::ConfigError(format!("Invalid retries: {}", retries)))?;
     }
 
@@ -621,8 +658,11 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
 
     // Validate configuration
     if config.name.is_empty() {
-        return Err(DigError::ConfigError("No domain name specified. \
-            Usage: dig-rs <domain> [--json] [--health] [--compare RESOLVERS...]".into()));
+        return Err(DigError::ConfigError(
+            "No domain name specified. \
+            Usage: dig-rs <domain> [--json] [--health] [--compare RESOLVERS...]"
+                .into(),
+        ));
     }
 
     Ok(config)
@@ -645,33 +685,36 @@ fn format_output(
                 ttl_units: output_config.ttl_units,
                 color: output_config.color,
             });
-            formatter.format(result)
+            formatter
+                .format(result)
                 .map_err(|e| DigError::QueryFailed(e.to_string()))
         }
         OutputFormat::Json => {
             // Use structured JSON formatter
             let formatter = StructuredFormatter::new();
-            formatter.format_lookup(result)
+            formatter
+                .format_lookup(result)
                 .map_err(|e| DigError::QueryFailed(e.to_string()))
         }
         OutputFormat::Short => {
             let formatter = ShortFormatter::default();
-            formatter.format(result)
+            formatter
+                .format(result)
                 .map_err(|e| DigError::QueryFailed(e.to_string()))
         }
         OutputFormat::Table => {
             let formatter = TableFormatter::default();
-            formatter.format(result)
+            formatter
+                .format(result)
                 .map_err(|e| DigError::QueryFailed(e.to_string()))
         }
         OutputFormat::Yaml => {
             let formatter = JsonFormatter::default();
-            formatter.format(result)
+            formatter
+                .format(result)
                 .map_err(|e| DigError::QueryFailed(e.to_string()))
         }
-        OutputFormat::Xml => {
-            Err(DigError::ConfigError("XML output not implemented".into()))
-        }
+        OutputFormat::Xml => Err(DigError::ConfigError("XML output not implemented".into())),
     }
 }
 
@@ -693,7 +736,12 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
 
     for (i, step) in result.steps.iter().enumerate() {
         let hop_num = format!("Hop {}", i + 1).bold();
-        println!("{}: {} ({})", hop_num, step.server.dimmed(), step.server_type.cyan());
+        println!(
+            "{}: {} ({})",
+            hop_num,
+            step.server.dimmed(),
+            step.server_type.cyan()
+        );
 
         // Show zone if available
         if let Some(zone) = &step.zone {
@@ -754,7 +802,12 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
     } else {
         result.steps.iter().map(|s| s.query_time_ms).sum::<u64>() / result.steps.len() as u64
     };
-    let max_time = result.steps.iter().map(|s| s.query_time_ms).max().unwrap_or(0);
+    let max_time = result
+        .steps
+        .iter()
+        .map(|s| s.query_time_ms)
+        .max()
+        .unwrap_or(0);
 
     println!("  Total time: {}ms", total_time);
     println!("  Average per hop: {}ms", avg_time);
@@ -771,11 +824,9 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
         if !final_answer.message.answer.is_empty() {
             println!();
             for record in &final_answer.message.answer {
-                println!("  {} {} IN {} {}",
-                    record.name,
-                    record.ttl,
-                    record.rtype,
-                    record.rdata
+                println!(
+                    "  {} {} IN {} {}",
+                    record.name, record.ttl, record.rtype, record.rdata
                 );
             }
         }

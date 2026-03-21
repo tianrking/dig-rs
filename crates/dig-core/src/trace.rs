@@ -6,8 +6,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use hickory_proto::op::{Message, MessageType, OpCode, Query};
-use hickory_proto::rr::{Name, RecordType as HickoryRecordType};
 use hickory_proto::rr::dns_class::DNSClass;
+use hickory_proto::rr::{Name, RecordType as HickoryRecordType};
 use hickory_proto::serialize::binary::{BinDecodable, BinDecoder, BinEncodable, BinEncoder};
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
@@ -37,19 +37,19 @@ const ROOT_SERVERS_IPV4: &[&str] = &[
 
 /// Root server addresses (IPv6)
 const ROOT_SERVERS_IPV6: &[&str] = &[
-    "2001:503:ba3e::2:30",   // a.root-servers.net
-    "2001:500:200::b",       // b.root-servers.net
-    "2001:500:2::c",         // c.root-servers.net
-    "2001:500:2d::d",        // d.root-servers.net
-    "2001:500:a8::e",        // e.root-servers.net
-    "2001:500:2f::f",        // f.root-servers.net
-    "2001:500:12::d0d",      // g.root-servers.net
-    "2001:500:1::53",        // h.root-servers.net
-    "2001:7fe::53",          // i.root-servers.net
-    "2001:503:c27::2:30",    // j.root-servers.net
-    "2001:7fd::1",           // k.root-servers.net
-    "2001:500:9f::42",       // l.root-servers.net
-    "2001:dc3::35",          // m.root-servers.net
+    "2001:503:ba3e::2:30", // a.root-servers.net
+    "2001:500:200::b",     // b.root-servers.net
+    "2001:500:2::c",       // c.root-servers.net
+    "2001:500:2d::d",      // d.root-servers.net
+    "2001:500:a8::e",      // e.root-servers.net
+    "2001:500:2f::f",      // f.root-servers.net
+    "2001:500:12::d0d",    // g.root-servers.net
+    "2001:500:1::53",      // h.root-servers.net
+    "2001:7fe::53",        // i.root-servers.net
+    "2001:503:c27::2:30",  // j.root-servers.net
+    "2001:7fd::1",         // k.root-servers.net
+    "2001:500:9f::42",     // l.root-servers.net
+    "2001:dc3::35",        // m.root-servers.net
 ];
 
 /// A single step in the DNS trace
@@ -136,7 +136,10 @@ impl DnsTrace {
             .map_err(|e| DigError::InvalidDomain(format!("Failed to parse domain: {}", e)))?;
 
         // Parse record type
-        let record_type: RecordType = self.config.query_type.parse()
+        let record_type: RecordType = self
+            .config
+            .query_type
+            .parse()
             .map_err(|e| DigError::UnsupportedRecordType(e))?;
         let hickory_type = self.to_hickory_record_type(record_type);
 
@@ -155,11 +158,7 @@ impl DnsTrace {
 
             debug!(
                 "Trace iteration {}: Querying {} for {} {} from {}",
-                iteration,
-                query_name,
-                hickory_type,
-                current_zone,
-                server
+                iteration, query_name, hickory_type, current_zone, server
             );
 
             // Send query
@@ -284,7 +283,8 @@ impl DnsTrace {
         let mut buf = Vec::with_capacity(4096);
         {
             let mut encoder = BinEncoder::new(&mut buf);
-            message.emit(&mut encoder)
+            message
+                .emit(&mut encoder)
                 .map_err(|e| DigError::ProtocolError(format!("Failed to encode: {}", e)))?;
         }
 
@@ -299,16 +299,13 @@ impl DnsTrace {
             .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
         let timeout = self.timeout;
-        let response_data = tokio::time::timeout(
-            timeout,
-            async {
-                socket.send_to(&buf, server).await?;
-                let mut recv_buf = vec![0u8; 65535];
-                let (len, _) = socket.recv_from(&mut recv_buf).await?;
-                recv_buf.truncate(len);
-                Ok::<Vec<u8>, std::io::Error>(recv_buf)
-            }
-        )
+        let response_data = tokio::time::timeout(timeout, async {
+            socket.send_to(&buf, server).await?;
+            let mut recv_buf = vec![0u8; 65535];
+            let (len, _) = socket.recv_from(&mut recv_buf).await?;
+            recv_buf.truncate(len);
+            Ok::<Vec<u8>, std::io::Error>(recv_buf)
+        })
         .await
         .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
         .map_err(|e| DigError::NetworkError(e.to_string()))?;
@@ -367,16 +364,17 @@ impl DnsTrace {
     }
 
     /// Build a map of NS names to their glue addresses
-    fn build_glue_map(&self, message: &Message) -> std::collections::HashMap<Name, Vec<SocketAddr>> {
+    fn build_glue_map(
+        &self,
+        message: &Message,
+    ) -> std::collections::HashMap<Name, Vec<SocketAddr>> {
         use std::collections::HashMap;
         let mut map: HashMap<Name, Vec<SocketAddr>> = HashMap::new();
 
         for record in message.additionals() {
             let name = record.name().clone();
             let addr = match record.data() {
-                hickory_proto::rr::RData::A(a) => {
-                    Some(SocketAddr::new(IpAddr::V4(a.0), 53))
-                }
+                hickory_proto::rr::RData::A(a) => Some(SocketAddr::new(IpAddr::V4(a.0), 53)),
                 hickory_proto::rr::RData::AAAA(aaaa) => {
                     Some(SocketAddr::new(IpAddr::V6(aaaa.0), 53))
                 }
@@ -393,17 +391,20 @@ impl DnsTrace {
 
     /// Parse trace response
     fn parse_trace_response(&self, message: &Message) -> TraceResponse {
-        let authority: Vec<String> = message.name_servers()
+        let authority: Vec<String> = message
+            .name_servers()
             .iter()
             .map(|r| format!("{} {} {:?}", r.name(), r.ttl(), r.data()))
             .collect();
 
-        let additional: Vec<String> = message.additionals()
+        let additional: Vec<String> = message
+            .additionals()
             .iter()
             .map(|r| format!("{} {} {:?}", r.name(), r.ttl(), r.data()))
             .collect();
 
-        let answer: Vec<String> = message.answers()
+        let answer: Vec<String> = message
+            .answers()
             .iter()
             .map(|r| format!("{} {} {:?}", r.name(), r.ttl(), r.data()))
             .collect();
@@ -433,7 +434,8 @@ impl DnsTrace {
             cd: message.checking_disabled(),
         };
 
-        let question: Vec<crate::lookup::DnsQuestion> = message.queries()
+        let question: Vec<crate::lookup::DnsQuestion> = message
+            .queries()
             .iter()
             .map(|q| crate::lookup::DnsQuestion {
                 name: q.name().to_string(),
@@ -457,7 +459,9 @@ impl DnsTrace {
             additional,
         };
 
-        let timestamp = chrono::Local::now().format("%a %b %d %H:%M:%S %Z %Y").to_string();
+        let timestamp = chrono::Local::now()
+            .format("%a %b %d %H:%M:%S %Z %Y")
+            .to_string();
 
         Ok(LookupResult {
             query_name: self.config.name.clone(),

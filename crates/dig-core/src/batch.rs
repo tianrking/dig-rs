@@ -3,10 +3,10 @@
 //! This module provides support for reading and processing multiple
 //! DNS queries from a file, similar to BIND9 dig's -f option.
 
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 use tracing::{debug, info, warn};
 
@@ -111,7 +111,8 @@ impl BatchProcessor {
 
         for line in reader.lines() {
             line_number += 1;
-            let line = line.map_err(|e| DigError::NetworkError(format!("Failed to read line: {}", e)))?;
+            let line =
+                line.map_err(|e| DigError::NetworkError(format!("Failed to read line: {}", e)))?;
 
             let line = line.trim();
 
@@ -189,7 +190,9 @@ impl BatchProcessor {
         }
 
         if domain.is_empty() {
-            return Err(DigError::InvalidDomain("No domain specified in query".into()));
+            return Err(DigError::InvalidDomain(
+                "No domain specified in query".into(),
+            ));
         }
 
         Ok(BatchQuery {
@@ -206,9 +209,25 @@ impl BatchProcessor {
     fn is_record_type(&self, s: &str) -> bool {
         matches!(
             s.to_uppercase().as_str(),
-            "A" | "AAAA" | "NS" | "CNAME" | "MX" | "TXT" | "PTR" | "SOA" |
-            "SRV" | "DNSKEY" | "DS" | "RRSIG" | "NSEC" | "NSEC3" | "TLSA" |
-            "CAA" | "SSHFP" | "ANY" | "AXFR" | "IXFR"
+            "A" | "AAAA"
+                | "NS"
+                | "CNAME"
+                | "MX"
+                | "TXT"
+                | "PTR"
+                | "SOA"
+                | "SRV"
+                | "DNSKEY"
+                | "DS"
+                | "RRSIG"
+                | "NSEC"
+                | "NSEC3"
+                | "TLSA"
+                | "CAA"
+                | "SSHFP"
+                | "ANY"
+                | "AXFR"
+                | "IXFR"
         )
     }
 
@@ -295,7 +314,8 @@ impl BatchProcessor {
         }
 
         for handle in handles {
-            handle.join()
+            handle
+                .join()
                 .map_err(|e| DigError::ConfigError(format!("Thread join failed: {:?}", e)))?;
         }
 
@@ -310,7 +330,8 @@ impl BatchProcessor {
 
     /// Execute a single query
     fn execute_query(&self, query: &BatchQuery) -> Result<LookupResult> {
-        self.runtime.block_on(execute_query_async(query, &self.base_config))
+        self.runtime
+            .block_on(execute_query_async(query, &self.base_config))
     }
 }
 
@@ -329,8 +350,7 @@ async fn execute_query_async(query: &BatchQuery, base_config: &DigConfig) -> Res
     }
 
     if let Some(ref qclass) = query.qclass {
-        config.query_class = qclass.parse()
-            .unwrap_or(QueryClass::IN);
+        config.query_class = qclass.parse().unwrap_or(QueryClass::IN);
     }
 
     let lookup = DigLookup::new(config);
@@ -374,10 +394,7 @@ mod tests {
 
     #[test]
     fn test_parse_query_line() {
-        let processor = BatchProcessor::new(
-            DigConfig::default(),
-            BatchConfig::default(),
-        ).unwrap();
+        let processor = BatchProcessor::new(DigConfig::default(), BatchConfig::default()).unwrap();
 
         let query = processor.parse_query_line("example.com", 1).unwrap();
         assert_eq!(query.domain, "example.com");
@@ -388,17 +405,16 @@ mod tests {
         assert_eq!(query.domain, "example.com");
         assert_eq!(query.qtype, "MX");
 
-        let query = processor.parse_query_line("@8.8.8.8 example.com", 3).unwrap();
+        let query = processor
+            .parse_query_line("@8.8.8.8 example.com", 3)
+            .unwrap();
         assert_eq!(query.domain, "example.com");
         assert_eq!(query.server, Some("8.8.8.8".to_string()));
     }
 
     #[test]
     fn test_is_record_type() {
-        let processor = BatchProcessor::new(
-            DigConfig::default(),
-            BatchConfig::default(),
-        ).unwrap();
+        let processor = BatchProcessor::new(DigConfig::default(), BatchConfig::default()).unwrap();
 
         assert!(processor.is_record_type("A"));
         assert!(processor.is_record_type("MX"));
@@ -408,10 +424,7 @@ mod tests {
 
     #[test]
     fn test_is_query_class() {
-        let processor = BatchProcessor::new(
-            DigConfig::default(),
-            BatchConfig::default(),
-        ).unwrap();
+        let processor = BatchProcessor::new(DigConfig::default(), BatchConfig::default()).unwrap();
 
         assert!(processor.is_query_class("IN"));
         assert!(processor.is_query_class("ch"));

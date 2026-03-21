@@ -3,11 +3,11 @@
 //! This module provides functionality for performing full (AXFR) and
 //! incremental (IXFR) zone transfers as specified in RFC 1035 and RFC 1995.
 
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tracing::{debug, info, warn};
 
 use crate::config::{DigConfig, Transport};
@@ -96,7 +96,9 @@ impl ZoneTransfer {
         let servers = if self.config.servers.is_empty() {
             self.get_system_servers()
         } else {
-            self.config.servers.iter()
+            self.config
+                .servers
+                .iter()
                 .filter_map(|s| {
                     let addr: Option<std::net::IpAddr> = s.address.parse().ok();
                     addr.map(|a| SocketAddr::new(a, s.port))
@@ -118,8 +120,12 @@ impl ZoneTransfer {
 
         let transfer_time = start.elapsed();
 
-        info!("{} transfer completed: {} records in {}ms",
-              ztype, result.record_count, transfer_time.as_millis());
+        info!(
+            "{} transfer completed: {} records in {}ms",
+            ztype,
+            result.record_count,
+            transfer_time.as_millis()
+        );
 
         Ok(result)
     }
@@ -194,7 +200,7 @@ impl ZoneTransfer {
     /// Send AXFR query and receive records
     async fn send_axfr_query(&self, server: SocketAddr) -> Result<Vec<DnsRecord>> {
         use hickory_proto::op::{Message, MessageType, OpCode, Query};
-        use hickory_proto::rr::{Name, RecordType as HickoryRecordType, DNSClass};
+        use hickory_proto::rr::{DNSClass, Name, RecordType as HickoryRecordType};
         use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
 
         // Build AXFR query
@@ -215,8 +221,9 @@ impl ZoneTransfer {
         let mut buf = Vec::with_capacity(4096);
         {
             let mut encoder = BinEncoder::new(&mut buf);
-            message.emit(&mut encoder)
-                .map_err(|e| DigError::ProtocolError(format!("Failed to encode AXFR query: {}", e)))?;
+            message.emit(&mut encoder).map_err(|e| {
+                DigError::ProtocolError(format!("Failed to encode AXFR query: {}", e))
+            })?;
         }
 
         // Add length prefix
@@ -225,15 +232,14 @@ impl ZoneTransfer {
         packet.extend_from_slice(&buf);
 
         // Send over TCP
-        let mut stream = tokio::time::timeout(
-            self.config.timeout,
-            TcpStream::connect(server)
-        )
-        .await
-        .map_err(|_| DigError::Timeout(self.config.timeout.as_millis() as u64))?
-        .map_err(|e| DigError::NetworkError(e.to_string()))?;
+        let mut stream = tokio::time::timeout(self.config.timeout, TcpStream::connect(server))
+            .await
+            .map_err(|_| DigError::Timeout(self.config.timeout.as_millis() as u64))?
+            .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
-        stream.write_all(&packet).await
+        stream
+            .write_all(&packet)
+            .await
             .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
         // Read response(s)
@@ -243,7 +249,8 @@ impl ZoneTransfer {
         loop {
             // Read message length
             let mut len_buf = [0u8; 2];
-            tokio::time::timeout(self.config.timeout, stream.read_exact(&mut len_buf)).await
+            tokio::time::timeout(self.config.timeout, stream.read_exact(&mut len_buf))
+                .await
                 .map_err(|_| DigError::Timeout(self.config.timeout.as_millis() as u64))?
                 .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
@@ -251,15 +258,17 @@ impl ZoneTransfer {
 
             // Read message
             let mut msg_buf = vec![0u8; msg_len as usize];
-            tokio::time::timeout(self.config.timeout, stream.read_exact(&mut msg_buf)).await
+            tokio::time::timeout(self.config.timeout, stream.read_exact(&mut msg_buf))
+                .await
                 .map_err(|_| DigError::Timeout(self.config.timeout.as_millis() as u64))?
                 .map_err(|e| DigError::NetworkError(e.to_string()))?;
 
             // Parse message
             use hickory_proto::serialize::binary::BinDecodable;
             let mut decoder = hickory_proto::serialize::binary::BinDecoder::new(&msg_buf);
-            let response = Message::read(&mut decoder)
-                .map_err(|e| DigError::ProtocolError(format!("Failed to parse AXFR response: {}", e)))?;
+            let response = Message::read(&mut decoder).map_err(|e| {
+                DigError::ProtocolError(format!("Failed to parse AXFR response: {}", e))
+            })?;
 
             // Extract records
             for record in response.answers() {
@@ -292,10 +301,7 @@ impl ZoneTransfer {
 
     /// Extract serial numbers from records
     fn extract_serials(&self, records: &[DnsRecord]) -> (Option<u32>, Option<u32>) {
-        let soa_records: Vec<_> = records
-            .iter()
-            .filter(|r| r.rtype == "SOA")
-            .collect();
+        let soa_records: Vec<_> = records.iter().filter(|r| r.rtype == "SOA").collect();
 
         if soa_records.len() >= 2 {
             // First SOA is start serial, last SOA is end serial
@@ -332,13 +338,12 @@ impl ZoneTransfer {
                 RData::AAAA(addr) => addr.to_string(),
                 RData::MX(mx) => format!("{} {}", mx.preference(), mx.exchange()),
                 RData::NS(ns) => ns.to_string(),
-                RData::TXT(txt) => {
-                    txt.txt_data()
-                        .iter()
-                        .map(|s| String::from_utf8_lossy(s).to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                }
+                RData::TXT(txt) => txt
+                    .txt_data()
+                    .iter()
+                    .map(|s| String::from_utf8_lossy(s).to_string())
+                    .collect::<Vec<_>>()
+                    .join(" "),
                 RData::CNAME(name) => name.to_string(),
                 RData::PTR(name) => name.to_string(),
                 RData::SOA(soa) => format!(
@@ -378,8 +383,14 @@ mod tests {
 
     #[test]
     fn test_zone_transfer_type_parsing() {
-        assert_eq!("AXFR".parse::<ZoneTransferType>().unwrap(), ZoneTransferType::AXFR);
-        assert_eq!("ixfr".parse::<ZoneTransferType>().unwrap(), ZoneTransferType::IXFR);
+        assert_eq!(
+            "AXFR".parse::<ZoneTransferType>().unwrap(),
+            ZoneTransferType::AXFR
+        );
+        assert_eq!(
+            "ixfr".parse::<ZoneTransferType>().unwrap(),
+            ZoneTransferType::IXFR
+        );
     }
 
     #[test]

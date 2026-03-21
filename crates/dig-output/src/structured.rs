@@ -6,10 +6,10 @@
 //! - Monitoring and alerting
 //! - DevOps workflows
 
-use std::io;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::io;
 
 use dig_core::lookup::LookupResult;
 
@@ -377,7 +377,11 @@ impl StructuredFormatter {
                     if records_by_type.CNAME.is_none() {
                         records_by_type.CNAME = Some(Vec::new());
                     }
-                    records_by_type.CNAME.as_mut().unwrap().push(record.rdata.clone());
+                    records_by_type
+                        .CNAME
+                        .as_mut()
+                        .unwrap()
+                        .push(record.rdata.clone());
                 }
                 "MX" => {
                     if records_by_type.MX.is_none() {
@@ -399,7 +403,8 @@ impl StructuredFormatter {
                         records_by_type.TXT = Some(Vec::new());
                     }
                     // TXT records can have multiple strings
-                    let txt_parts: Vec<String> = record.rdata
+                    let txt_parts: Vec<String> = record
+                        .rdata
                         .split('"')
                         .filter(|s| !s.trim().is_empty())
                         .map(|s| s.to_string())
@@ -410,7 +415,11 @@ impl StructuredFormatter {
                     if records_by_type.NS.is_none() {
                         records_by_type.NS = Some(Vec::new());
                     }
-                    records_by_type.NS.as_mut().unwrap().push(record.rdata.clone());
+                    records_by_type
+                        .NS
+                        .as_mut()
+                        .unwrap()
+                        .push(record.rdata.clone());
                 }
                 "SOA" => {
                     // Parse SOA record
@@ -449,12 +458,18 @@ impl StructuredFormatter {
                 _ => {
                     // Other record types
                     if !records_by_type.other.contains_key(&record.rtype) {
-                        records_by_type.other.insert(record.rtype.clone(), Vec::new());
+                        records_by_type
+                            .other
+                            .insert(record.rtype.clone(), Vec::new());
                     }
-                    records_by_type.other.get_mut(&record.rtype).unwrap().push(json!({
-                        "data": record.rdata,
-                        "ttl": record.ttl,
-                    }));
+                    records_by_type
+                        .other
+                        .get_mut(&record.rtype)
+                        .unwrap()
+                        .push(json!({
+                            "data": record.rdata,
+                            "ttl": record.ttl,
+                        }));
                 }
             }
         }
@@ -471,7 +486,7 @@ impl StructuredFormatter {
             resolver: ResolverInfo {
                 address: result.server.clone(),
                 resolver_type: "custom".to_string(), // TODO: detect resolver type
-                transport: "UDP".to_string(), // TODO: detect transport
+                transport: "UDP".to_string(),        // TODO: detect transport
             },
             performance: PerformanceMetrics {
                 latency_ms: result.query_time_ms,

@@ -1,9 +1,9 @@
 // Benchmark tests for dig-rs using Criterion
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use dig_core::config::{Config, DnsServer, QueryType, RecordType, TransportProtocol};
-use dig_core::resolver::Resolver;
 use dig_core::lookup::Lookup;
+use dig_core::resolver::Resolver;
 use std::time::Duration;
 
 /// Benchmark basic A record lookup
@@ -140,18 +140,22 @@ fn bench_timeouts(c: &mut Criterion) {
     let mut group = c.benchmark_group("timeouts");
 
     for timeout in timeouts {
-        group.bench_with_input(BenchmarkId::from_parameter(timeout), &timeout, |b, &timeout| {
-            b.to_async(&rt).iter(|| async {
-                let config = Config::builder()
-                    .query_name("example.com".to_string())
-                    .record_type(RecordType::A)
-                    .timeout(Duration::from_secs(timeout))
-                    .build()
-                    .unwrap();
+        group.bench_with_input(
+            BenchmarkId::from_parameter(timeout),
+            &timeout,
+            |b, &timeout| {
+                b.to_async(&rt).iter(|| async {
+                    let config = Config::builder()
+                        .query_name("example.com".to_string())
+                        .record_type(RecordType::A)
+                        .timeout(Duration::from_secs(timeout))
+                        .build()
+                        .unwrap();
 
-                let _ = Lookup::query(&config).await;
-            })
-        });
+                    let _ = Lookup::query(&config).await;
+                })
+            },
+        );
     }
 
     group.finish();

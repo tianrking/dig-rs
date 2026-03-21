@@ -3,8 +3,8 @@
 //! This module provides TSIG authentication for DNS queries,
 //! as specified in RFC 2845.
 
-use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 use thiserror::Error;
 use tracing::{debug, warn};
 
@@ -44,7 +44,9 @@ impl TsigAlgorithm {
     /// Parse algorithm from string
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_uppercase().as_str() {
-            "HMAC-MD5.SIG-ALG.REG.INT" | "MD5" | "HMACMD5" | "HMAC-MD5" => Some(TsigAlgorithm::HMACMD5),
+            "HMAC-MD5.SIG-ALG.REG.INT" | "MD5" | "HMACMD5" | "HMAC-MD5" => {
+                Some(TsigAlgorithm::HMACMD5)
+            }
             "HMAC-SHA1" | "SHA1" | "HMACSHA1" => Some(TsigAlgorithm::HMACSHA1),
             "HMAC-SHA224" | "SHA224" | "HMACSHA224" => Some(TsigAlgorithm::HMACSHA224),
             "HMAC-SHA256" | "SHA256" | "HMACSHA256" => Some(TsigAlgorithm::HMACSHA256),
@@ -141,25 +143,31 @@ impl TsigKey {
         let content = content.trim();
 
         // Extract key name
-        let name_start = content.find("key \"")
+        let name_start = content
+            .find("key \"")
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
-        let name_end = content[name_start + 5..].find('"')
+        let name_end = content[name_start + 5..]
+            .find('"')
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
         let name = content[name_start + 5..name_start + 5 + name_end].to_string();
 
         // Extract algorithm
-        let alg_start = content.find("algorithm \"")
+        let alg_start = content
+            .find("algorithm \"")
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
-        let alg_end = content[alg_start + 11..].find('"')
+        let alg_end = content[alg_start + 11..]
+            .find('"')
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
         let algorithm_str = &content[alg_start + 11..alg_start + 11 + alg_end];
         let algorithm = TsigAlgorithm::from_str(algorithm_str)
             .ok_or_else(|| TsigError::UnsupportedAlgorithm(algorithm_str.to_string()))?;
 
         // Extract secret
-        let secret_start = content.find("secret \"")
+        let secret_start = content
+            .find("secret \"")
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
-        let secret_end = content[secret_start + 8..].find('"')
+        let secret_end = content[secret_start + 8..]
+            .find('"')
             .ok_or_else(|| TsigError::InvalidKeyFormat)?;
         let key = content[secret_start + 8..secret_start + 8 + secret_end].to_string();
 
@@ -193,7 +201,7 @@ impl TsigKey {
 
 /// Simple base64 decode
 fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, TsigError> {
-    use base64::{Engine as _, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine as _};
     general_purpose::STANDARD
         .decode(input)
         .map_err(|e| TsigError::SigningError(e.to_string()))
@@ -233,7 +241,10 @@ impl TsigSigner {
         // This is a placeholder for the actual HMAC implementation
         // In a production environment, you would use a proper crypto library
         // like ring or hmac from the Rust standard library
-        debug!("Signing message with TSIG algorithm: {}", self.key.algorithm);
+        debug!(
+            "Signing message with TSIG algorithm: {}",
+            self.key.algorithm
+        );
 
         // For now, return a placeholder signature
         // TODO: Implement proper HMAC signing
@@ -309,9 +320,18 @@ mod tests {
 
     #[test]
     fn test_algorithm_parsing() {
-        assert_eq!(TsigAlgorithm::from_str("hmac-md5"), Some(TsigAlgorithm::HMACMD5));
-        assert_eq!(TsigAlgorithm::from_str("HMAC-SHA256"), Some(TsigAlgorithm::HMACSHA256));
-        assert_eq!(TsigAlgorithm::from_str("sha512"), Some(TsigAlgorithm::HMACSHA512));
+        assert_eq!(
+            TsigAlgorithm::from_str("hmac-md5"),
+            Some(TsigAlgorithm::HMACMD5)
+        );
+        assert_eq!(
+            TsigAlgorithm::from_str("HMAC-SHA256"),
+            Some(TsigAlgorithm::HMACSHA256)
+        );
+        assert_eq!(
+            TsigAlgorithm::from_str("sha512"),
+            Some(TsigAlgorithm::HMACSHA512)
+        );
     }
 
     #[test]

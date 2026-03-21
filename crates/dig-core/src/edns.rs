@@ -3,8 +3,8 @@
 //! This module provides support for various EDNS(0) options as specified
 //! in RFC 6891 and related RFCs.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use serde::{Deserialize, Serialize};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
 
 /// EDNS option errors
@@ -94,7 +94,10 @@ impl EdnsOption {
 
     /// Create an empty option
     pub fn empty(code: EdnsOptionCode) -> Self {
-        Self { code, data: Vec::new() }
+        Self {
+            code,
+            data: Vec::new(),
+        }
     }
 
     /// Get the length of the option data
@@ -128,7 +131,9 @@ impl NsidOption {
 
     /// Create NSID from string
     pub fn from_string(s: &str) -> Self {
-        Self { nsid: s.as_bytes().to_vec() }
+        Self {
+            nsid: s.as_bytes().to_vec(),
+        }
     }
 
     /// Convert to EDNS option
@@ -179,7 +184,10 @@ impl CookieOption {
             .as_nanos();
 
         cookie[0..8].copy_from_slice(&timestamp.to_le_bytes()[0..8]);
-        Self { client_cookie: cookie, server_cookie: None }
+        Self {
+            client_cookie: cookie,
+            server_cookie: None,
+        }
     }
 
     /// Convert to EDNS option
@@ -378,7 +386,10 @@ pub struct ExtendedErrorOption {
 impl ExtendedErrorOption {
     /// Create a new extended error option
     pub fn new(info_code: u16, extra_text: String) -> Self {
-        Self { info_code, extra_text }
+        Self {
+            info_code,
+            extra_text,
+        }
     }
 
     /// Convert to EDNS option
@@ -396,7 +407,10 @@ mod tests {
     #[test]
     fn test_edns_option_code_from_u16() {
         assert_eq!(EdnsOptionCode::from_u16(3).unwrap(), EdnsOptionCode::NSID);
-        assert_eq!(EdnsOptionCode::from_u16(10).unwrap(), EdnsOptionCode::Cookie);
+        assert_eq!(
+            EdnsOptionCode::from_u16(10).unwrap(),
+            EdnsOptionCode::Cookie
+        );
         assert!(EdnsOptionCode::from_u16(999).is_err());
     }
 

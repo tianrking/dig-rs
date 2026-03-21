@@ -46,8 +46,10 @@ impl OutputFormatter for TableFormatter {
         let mut output = String::new();
 
         if self.config.comments {
-            output.push_str(&format!("Query: {} {} {}\n\n",
-                result.query_name, result.query_type, result.query_class));
+            output.push_str(&format!(
+                "Query: {} {} {}\n\n",
+                result.query_name, result.query_type, result.query_class
+            ));
         }
 
         if self.config.question && !result.message.question.is_empty() {
@@ -87,9 +89,7 @@ impl OutputFormatter for TableFormatter {
         if self.config.stats {
             output.push_str(&format!(
                 "\nQuery time: {}ms | Server: {} | Size: {} bytes\n",
-                result.query_time_ms,
-                result.server,
-                result.message_size
+                result.query_time_ms, result.server, result.message_size
             ));
         }
 
@@ -134,10 +134,7 @@ impl OutputFormatter for TableFormatter {
     fn format_stats(&self, result: &LookupResult) -> io::Result<String> {
         Ok(format!(
             "Query time: {}ms\nServer: {}\nSize: {} bytes\nWhen: {}",
-            result.query_time_ms,
-            result.server,
-            result.message_size,
-            result.timestamp
+            result.query_time_ms, result.server, result.message_size, result.timestamp
         ))
     }
 }

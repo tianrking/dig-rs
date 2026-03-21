@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hickory_proto::op::{Message, MessageType, OpCode, Query};
-use hickory_proto::rr::{Name, RData, Record, RecordType as HickoryRecordType};
 use hickory_proto::rr::dns_class::DNSClass;
+use hickory_proto::rr::{Name, RData, Record, RecordType as HickoryRecordType};
 use hickory_proto::serialize::binary::{BinDecodable, BinDecoder, BinEncodable, BinEncoder};
 use serde::{Deserialize, Serialize};
 use tokio::net::{TcpStream, UdpSocket};
@@ -128,7 +128,10 @@ impl DigLookup {
         let query_name = Self::parse_name(name)?;
 
         // Parse the record type
-        let record_type: RecordType = self.config.query_type.parse()
+        let record_type: RecordType = self
+            .config
+            .query_type
+            .parse()
             .map_err(|e| DigError::UnsupportedRecordType(e))?;
         let hickory_type = Self::to_hickory_record_type(record_type);
 
@@ -145,7 +148,9 @@ impl DigLookup {
         let servers = if self.config.servers.is_empty() {
             self.get_system_servers()
         } else {
-            self.config.servers.iter()
+            self.config
+                .servers
+                .iter()
                 .filter_map(|s| {
                     let addr: Option<IpAddr> = s.address.parse().ok();
                     addr.map(|a| SocketAddr::new(a, s.port))
@@ -186,7 +191,11 @@ impl DigLookup {
             Transport::Tcp => self.send_tcp(&server, &message).await?,
             Transport::Tls => self.send_tls(&server, &message).await?,
             Transport::Https => self.send_https(&server, &message).await?,
-            Transport::Quic => return Err(DigError::ConfigError("QUIC transport not yet implemented".into())),
+            Transport::Quic => {
+                return Err(DigError::ConfigError(
+                    "QUIC transport not yet implemented".into(),
+                ))
+            }
         };
 
         let query_time = start.elapsed();
@@ -207,15 +216,19 @@ impl DigLookup {
             name.to_string()
         };
 
-        Name::from_utf8(&name)
-            .map_err(|e| DigError::InvalidDomain(format!("Failed to parse domain '{}': {}", name, e)))
+        Name::from_utf8(&name).map_err(|e| {
+            DigError::InvalidDomain(format!("Failed to parse domain '{}': {}", name, e))
+        })
     }
 
     /// Convert IP address to PTR name
     fn ip_to_ptr_name(ip: &str) -> Result<String> {
         if let Ok(ipv4) = ip.parse::<Ipv4Addr>() {
             let octets = ipv4.octets();
-            Ok(format!("{}.{}.{}.{}.in-addr.arpa.", octets[3], octets[2], octets[1], octets[0]))
+            Ok(format!(
+                "{}.{}.{}.{}.in-addr.arpa.",
+                octets[3], octets[2], octets[1], octets[0]
+            ))
         } else if let Ok(ipv6) = ip.parse::<Ipv6Addr>() {
             let segments = ipv6.segments();
             let mut ptr = String::new();
@@ -274,7 +287,8 @@ impl DigLookup {
         let mut buf = Vec::with_capacity(4096);
         {
             let mut encoder = BinEncoder::new(&mut buf);
-            message.emit(&mut encoder)
+            message
+                .emit(&mut encoder)
                 .map_err(|e| DigError::ProtocolError(format!("Failed to encode message: {}", e)))?;
         }
 
@@ -290,16 +304,13 @@ impl DigLookup {
 
         // Set timeout
         let timeout = self.config.timeout;
-        tokio::time::timeout(
-            timeout,
-            async {
-                socket.send_to(&buf, server).await?;
-                let mut recv_buf = vec![0u8; 65535];
-                let (len, _) = socket.recv_from(&mut recv_buf).await?;
-                recv_buf.truncate(len);
-                Ok::<Vec<u8>, std::io::Error>(recv_buf)
-            }
-        )
+        tokio::time::timeout(timeout, async {
+            socket.send_to(&buf, server).await?;
+            let mut recv_buf = vec![0u8; 65535];
+            let (len, _) = socket.recv_from(&mut recv_buf).await?;
+            recv_buf.truncate(len);
+            Ok::<Vec<u8>, std::io::Error>(recv_buf)
+        })
         .await
         .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
         .map_err(|e| DigError::NetworkError(e.to_string()))
@@ -311,7 +322,8 @@ impl DigLookup {
         let mut buf = Vec::with_capacity(65535);
         {
             let mut encoder = BinEncoder::new(&mut buf);
-            message.emit(&mut encoder)
+            message
+                .emit(&mut encoder)
                 .map_err(|e| DigError::ProtocolError(format!("Failed to encode message: {}", e)))?;
         }
 
@@ -321,27 +333,24 @@ impl DigLookup {
         packet.extend_from_slice(&buf);
 
         let timeout = self.config.timeout;
-        tokio::time::timeout(
-            timeout,
-            async {
-                let mut stream = TcpStream::connect(server).await?;
+        tokio::time::timeout(timeout, async {
+            let mut stream = TcpStream::connect(server).await?;
 
-                // Send the query
-                use tokio::io::{AsyncWriteExt, AsyncReadExt};
-                stream.write_all(&packet).await?;
+            // Send the query
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            stream.write_all(&packet).await?;
 
-                // Read the response length
-                let mut len_buf = [0u8; 2];
-                stream.read_exact(&mut len_buf).await?;
-                let response_len = ((len_buf[0] as u16) << 8) | (len_buf[1] as u16);
+            // Read the response length
+            let mut len_buf = [0u8; 2];
+            stream.read_exact(&mut len_buf).await?;
+            let response_len = ((len_buf[0] as u16) << 8) | (len_buf[1] as u16);
 
-                // Read the response
-                let mut response = vec![0u8; response_len as usize];
-                stream.read_exact(&mut response).await?;
+            // Read the response
+            let mut response = vec![0u8; response_len as usize];
+            stream.read_exact(&mut response).await?;
 
-                Ok::<Vec<u8>, std::io::Error>(response)
-            }
-        )
+            Ok::<Vec<u8>, std::io::Error>(response)
+        })
         .await
         .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
         .map_err(|e| DigError::NetworkError(e.to_string()))
@@ -351,10 +360,10 @@ impl DigLookup {
     async fn send_tls(&self, server: &SocketAddr, message: &Message) -> Result<Vec<u8>> {
         #[cfg(all(feature = "dot", any(feature = "tokio-rustls")))]
         {
-            use tokio_rustls::TlsConnector;
             use rustls::ClientConfig;
             use rustls_pemfile::{certs, private_key};
             use std::io::BufReader;
+            use tokio_rustls::TlsConnector;
 
             // Build TLS connector
             let mut roots = rustls::RootCertStore::empty();
@@ -374,8 +383,9 @@ impl DigLookup {
             let mut buf = Vec::with_capacity(65535);
             {
                 let mut encoder = BinEncoder::new(&mut buf);
-                message.emit(&mut encoder)
-                    .map_err(|e| DigError::ProtocolError(format!("Failed to encode message: {}", e)))?;
+                message.emit(&mut encoder).map_err(|e| {
+                    DigError::ProtocolError(format!("Failed to encode message: {}", e))
+                })?;
             }
 
             // Prepend length
@@ -384,38 +394,38 @@ impl DigLookup {
             packet.extend_from_slice(&buf);
 
             let timeout = self.config.timeout;
-            tokio::time::timeout(
-                timeout,
-                async {
-                    // Connect to server
-                    let stream = tokio::net::TcpStream::connect(server).await?;
+            tokio::time::timeout(timeout, async {
+                // Connect to server
+                let stream = tokio::net::TcpStream::connect(server).await?;
 
-                    // Wrap in TLS
-                    let tls_stream = connector.connect(
-                        rustls::ServerName::try_from(server_name.as_str())
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?,
-                        stream
-                    ).await?;
+                // Wrap in TLS
+                let tls_stream = connector
+                    .connect(
+                        rustls::ServerName::try_from(server_name.as_str()).map_err(|e| {
+                            std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
+                        })?,
+                        stream,
+                    )
+                    .await?;
 
-                    let (mut reader, mut writer) = tokio::io::split(tls_stream);
+                let (mut reader, mut writer) = tokio::io::split(tls_stream);
 
-                    // Send the query
-                    use tokio::io::{AsyncWriteExt, AsyncReadExt};
-                    writer.write_all(&packet).await?;
-                    writer.flush()?;
+                // Send the query
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                writer.write_all(&packet).await?;
+                writer.flush()?;
 
-                    // Read the response length
-                    let mut len_buf = [0u8; 2];
-                    reader.read_exact(&mut len_buf).await?;
-                    let response_len = ((len_buf[0] as u16) << 8) | (len_buf[1] as u16);
+                // Read the response length
+                let mut len_buf = [0u8; 2];
+                reader.read_exact(&mut len_buf).await?;
+                let response_len = ((len_buf[0] as u16) << 8) | (len_buf[1] as u16);
 
-                    // Read the response
-                    let mut response = vec![0u8; response_len as usize];
-                    reader.read_exact(&mut response).await?;
+                // Read the response
+                let mut response = vec![0u8; response_len as usize];
+                reader.read_exact(&mut response).await?;
 
-                    Ok::<Vec<u8>, std::io::Error>(response)
-                }
-            )
+                Ok::<Vec<u8>, std::io::Error>(response)
+            })
             .await
             .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
             .map_err(|e| DigError::NetworkError(e.to_string()))
@@ -432,86 +442,86 @@ impl DigLookup {
     async fn send_https(&self, server: &SocketAddr, message: &Message) -> Result<Vec<u8>> {
         #[cfg(feature = "doh")]
         {
-            use base64::Engine;
             use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+            use base64::Engine;
 
             // Get server config for DoH options
-            let server_config = self.config.servers.iter()
-                .find(|s| s.address.parse::<IpAddr>().map(|ip| SocketAddr::new(ip, s.port)) == Ok(*server));
+            let server_config = self.config.servers.iter().find(|s| {
+                s.address
+                    .parse::<IpAddr>()
+                    .map(|ip| SocketAddr::new(ip, s.port))
+                    == Ok(*server)
+            });
 
             let https_path = server_config
                 .and_then(|s| s.https_path.as_ref())
                 .map(|s| s.as_str())
                 .unwrap_or("/dns-query");
 
-            let use_get = server_config
-                .map(|s| s.https_get)
-                .unwrap_or(false);
+            let use_get = server_config.map(|s| s.https_get).unwrap_or(false);
 
             // Encode the message
             let mut buf = Vec::with_capacity(4096);
             {
                 let mut encoder = BinEncoder::new(&mut buf);
-                message.emit(&mut encoder)
-                    .map_err(|e| DigError::ProtocolError(format!("Failed to encode message: {}", e)))?;
+                message.emit(&mut encoder).map_err(|e| {
+                    DigError::ProtocolError(format!("Failed to encode message: {}", e))
+                })?;
             }
 
             let timeout = self.config.timeout;
-            tokio::time::timeout(
-                timeout,
-                async {
-                    // Build HTTP client
-                    let client = reqwest::Client::builder()
-                        .use_rustls_tls()
-                        .build()
+            tokio::time::timeout(timeout, async {
+                // Build HTTP client
+                let client = reqwest::Client::builder()
+                    .use_rustls_tls()
+                    .build()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+                let host = if server.port() == 443 {
+                    format!("https://{}", server.ip())
+                } else {
+                    format!("https://{}:{}", server.ip(), server.port())
+                };
+
+                if use_get {
+                    // Use GET method with base64-encoded DNS query
+                    let dns_query = BASE64_URL_SAFE_NO_PAD.encode(&buf);
+                    let url = format!("{}{}?dns={}", host, https_path, dns_query);
+
+                    let response = client
+                        .get(&url)
+                        .header("Accept", "application/dns-message")
+                        .send()
+                        .await
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-                    let host = if server.port() == 443 {
-                        format!("https://{}", server.ip())
-                    } else {
-                        format!("https://{}:{}", server.ip(), server.port())
-                    };
+                    let data = response
+                        .bytes()
+                        .await
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-                    if use_get {
-                        // Use GET method with base64-encoded DNS query
-                        let dns_query = BASE64_URL_SAFE_NO_PAD.encode(&buf);
-                        let url = format!("{}{}?dns={}", host, https_path, dns_query);
+                    Ok::<Vec<u8>, std::io::Error>(data.to_vec())
+                } else {
+                    // Use POST method with binary DNS message
+                    let url = format!("{}{}", host, https_path);
 
-                        let response = client
-                            .get(&url)
-                            .header("Accept", "application/dns-message")
-                            .send()
-                            .await
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let response = client
+                        .post(&url)
+                        .header("Accept", "application/dns-message")
+                        .header("Content-Type", "application/dns-message")
+                        .body(buf.clone())
+                        .send()
+                        .await
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-                        let data = response
-                            .bytes()
-                            .await
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let data = response
+                        .bytes()
+                        .await
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-                        Ok::<Vec<u8>, std::io::Error>(data.to_vec())
-                    } else {
-                        // Use POST method with binary DNS message
-                        let url = format!("{}{}", host, https_path);
-
-                        let response = client
-                            .post(&url)
-                            .header("Accept", "application/dns-message")
-                            .header("Content-Type", "application/dns-message")
-                            .body(buf.clone())
-                            .send()
-                            .await
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-                        let data = response
-                            .bytes()
-                            .await
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-                        Ok::<Vec<u8>, std::io::Error>(data.to_vec())
-                    }
+                    Ok::<Vec<u8>, std::io::Error>(data.to_vec())
                 }
-            )
+            })
             .await
             .map_err(|_| DigError::Timeout(timeout.as_millis() as u64))?
             .map_err(|e| DigError::NetworkError(e.to_string()))
@@ -525,7 +535,12 @@ impl DigLookup {
     }
 
     /// Parse the DNS response
-    fn parse_response(&self, data: &[u8], server: SocketAddr, query_time: Duration) -> Result<LookupResult> {
+    fn parse_response(
+        &self,
+        data: &[u8],
+        server: SocketAddr,
+        query_time: Duration,
+    ) -> Result<LookupResult> {
         let mut decoder = BinDecoder::new(data);
         let message = Message::read(&mut decoder)
             .map_err(|e| DigError::ProtocolError(format!("Failed to parse response: {}", e)))?;
@@ -534,7 +549,9 @@ impl DigLookup {
         let dns_message = self.build_dns_message(&message)?;
         let message_size = data.len();
 
-        let timestamp = chrono::Local::now().format("%a %b %d %H:%M:%S %Z %Y").to_string();
+        let timestamp = chrono::Local::now()
+            .format("%a %b %d %H:%M:%S %Z %Y")
+            .to_string();
 
         Ok(LookupResult {
             query_name: self.config.name.clone(),
@@ -560,7 +577,8 @@ impl DigLookup {
             cd: message.checking_disabled(),
         };
 
-        let question: Vec<DnsQuestion> = message.queries()
+        let question: Vec<DnsQuestion> = message
+            .queries()
             .iter()
             .map(|q| DnsQuestion {
                 name: q.name().to_string(),
@@ -606,13 +624,12 @@ impl DigLookup {
             RData::AAAA(addr) => addr.to_string(),
             RData::MX(mx) => format!("{} {}", mx.preference(), mx.exchange()),
             RData::NS(ns) => ns.to_string(),
-            RData::TXT(txt) => {
-                txt.txt_data()
-                    .iter()
-                    .map(|s| String::from_utf8_lossy(s).to_string())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            }
+            RData::TXT(txt) => txt
+                .txt_data()
+                .iter()
+                .map(|s| String::from_utf8_lossy(s).to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
             RData::CNAME(name) => name.to_string(),
             RData::PTR(name) => name.to_string(),
             RData::SOA(soa) => format!(

@@ -21,20 +21,20 @@ pub mod trace;
 pub mod tsig;
 pub mod zonetransfer;
 
-pub use batch::{BatchProcessor, BatchConfig, BatchQuery, BatchResult};
+pub use batch::{BatchConfig, BatchProcessor, BatchQuery, BatchResult};
 pub use config::DigConfig;
 pub use diagnostic::{
-    DnsDiagnostic, HealthCheck, HealthStatus, CheckResult, CheckStatus,
-    ComparisonResult, ResolverResult, compare_resolvers,
+    compare_resolvers, CheckResult, CheckStatus, ComparisonResult, DnsDiagnostic, HealthCheck,
+    HealthStatus, ResolverResult,
 };
-pub use edns::{EdnsOption, EdnsOptionCode, CookieOption, NsidOption, SubnetOption};
+pub use edns::{CookieOption, EdnsOption, EdnsOptionCode, NsidOption, SubnetOption};
 pub use error::{DigError, Result};
 pub use lookup::{DigLookup, LookupResult};
-pub use metrics::{QueryMetrics, AggregatedMetrics, MetricsCollector, Timing};
+pub use metrics::{AggregatedMetrics, MetricsCollector, QueryMetrics, Timing};
 pub use record::RecordType;
 pub use resolver::DigResolver;
-pub use tsig::{TsigKey, TsigAlgorithm, TsigConfig, TsigSigner};
-pub use zonetransfer::{ZoneTransfer, ZoneTransferType, ZoneTransferResult};
+pub use tsig::{TsigAlgorithm, TsigConfig, TsigKey, TsigSigner};
+pub use zonetransfer::{ZoneTransfer, ZoneTransferResult, ZoneTransferType};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

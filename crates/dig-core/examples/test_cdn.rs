@@ -1,6 +1,6 @@
 use dig_core::config::{DigConfig, ServerConfig};
-use dig_core::lookup::DigLookup;
 use dig_core::diagnostic::DnsDiagnostic;
+use dig_core::lookup::DigLookup;
 use tokio::runtime::Runtime;
 
 fn main() {

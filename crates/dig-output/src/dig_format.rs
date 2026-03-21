@@ -6,7 +6,7 @@ use std::io;
 
 use dig_core::lookup::LookupResult;
 
-use crate::format::{OutputConfig, OutputFormatter, format_ttl, pad_right};
+use crate::format::{format_ttl, pad_right, OutputConfig, OutputFormatter};
 
 /// Classic dig-style formatter
 pub struct DigFormatter {
@@ -28,13 +28,27 @@ impl DigFormatter {
     fn format_flags(&self, flags: &dig_core::lookup::DnsFlags) -> String {
         let mut parts = Vec::new();
 
-        if flags.qr { parts.push("qr"); }
-        if flags.aa { parts.push("aa"); }
-        if flags.tc { parts.push("tc"); }
-        if flags.rd { parts.push("rd"); }
-        if flags.ra { parts.push("ra"); }
-        if flags.ad { parts.push("ad"); }
-        if flags.cd { parts.push("cd"); }
+        if flags.qr {
+            parts.push("qr");
+        }
+        if flags.aa {
+            parts.push("aa");
+        }
+        if flags.tc {
+            parts.push("tc");
+        }
+        if flags.rd {
+            parts.push("rd");
+        }
+        if flags.ra {
+            parts.push("ra");
+        }
+        if flags.ad {
+            parts.push("ad");
+        }
+        if flags.cd {
+            parts.push("cd");
+        }
 
         parts.join(" ")
     }
@@ -47,7 +61,10 @@ impl DigFormatter {
         let class = pad_right(&record.class, 4);
         let rtype = pad_right(&record.rtype, 6);
 
-        format!("{}\t{}\t{}\t{}\t{}", name, ttl_padded, class, rtype, record.rdata)
+        format!(
+            "{}\t{}\t{}\t{}\t{}",
+            name, ttl_padded, class, rtype, record.rdata
+        )
     }
 }
 
@@ -190,10 +207,7 @@ impl OutputFormatter for DigFormatter {
     fn format_stats(&self, result: &LookupResult) -> io::Result<String> {
         let stats = format!(
             ";; Query time: {} msec\n;; SERVER: {}\n;; WHEN: {}\n;; MSG SIZE  rcvd: {}\n",
-            result.query_time_ms,
-            result.server,
-            result.timestamp,
-            result.message_size
+            result.query_time_ms, result.server, result.timestamp, result.message_size
         );
 
         Ok(stats)

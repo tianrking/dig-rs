@@ -2,10 +2,10 @@
 //!
 //! This module provides metrics collection and reporting capabilities.
 
-use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 /// DNS query metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,9 +103,18 @@ impl AggregatedMetrics {
         self.avg_response_size = self.total_bytes as f64 / self.total_queries as f64;
 
         // Update counts
-        *self.queries_by_type.entry(metrics.query_type.clone()).or_insert(0) += 1;
-        *self.queries_by_server.entry(metrics.server.clone()).or_insert(0) += 1;
-        *self.queries_by_rcode.entry(metrics.response_code.clone()).or_insert(0) += 1;
+        *self
+            .queries_by_type
+            .entry(metrics.query_type.clone())
+            .or_insert(0) += 1;
+        *self
+            .queries_by_server
+            .entry(metrics.server.clone())
+            .or_insert(0) += 1;
+        *self
+            .queries_by_rcode
+            .entry(metrics.response_code.clone())
+            .or_insert(0) += 1;
     }
 
     /// Get success rate as percentage
@@ -121,13 +130,28 @@ impl AggregatedMetrics {
         let mut output = String::new();
         output.push_str("DNS Query Metrics:\n");
         output.push_str(&format!("  Total queries: {}\n", self.total_queries));
-        output.push_str(&format!("  Successful: {} ({:.1}%)\n",
-            self.successful_queries, self.success_rate()));
+        output.push_str(&format!(
+            "  Successful: {} ({:.1}%)\n",
+            self.successful_queries,
+            self.success_rate()
+        ));
         output.push_str(&format!("  Failed: {}\n", self.failed_queries));
-        output.push_str(&format!("  Avg query time: {:.2} ms\n", self.avg_query_time_ms));
-        output.push_str(&format!("  Min query time: {} ms\n", self.min_query_time_ms));
-        output.push_str(&format!("  Max query time: {} ms\n", self.max_query_time_ms));
-        output.push_str(&format!("  Avg response size: {:.2} bytes\n", self.avg_response_size));
+        output.push_str(&format!(
+            "  Avg query time: {:.2} ms\n",
+            self.avg_query_time_ms
+        ));
+        output.push_str(&format!(
+            "  Min query time: {} ms\n",
+            self.min_query_time_ms
+        ));
+        output.push_str(&format!(
+            "  Max query time: {} ms\n",
+            self.max_query_time_ms
+        ));
+        output.push_str(&format!(
+            "  Avg response size: {:.2} bytes\n",
+            self.avg_response_size
+        ));
         output.push_str(&format!("  Total bytes: {} bytes\n", self.total_bytes));
         output
     }
@@ -170,14 +194,13 @@ impl MetricsCollector {
 
     /// Get all collected metrics
     pub fn get_metrics(&self) -> Vec<QueryMetrics> {
-        self.metrics.read()
-            .map(|m| m.clone())
-            .unwrap_or_default()
+        self.metrics.read().map(|m| m.clone()).unwrap_or_default()
     }
 
     /// Get aggregated metrics
     pub fn get_aggregated(&self) -> AggregatedMetrics {
-        self.aggregated.read()
+        self.aggregated
+            .read()
             .map(|a| a.clone())
             .unwrap_or_default()
     }
@@ -194,9 +217,7 @@ impl MetricsCollector {
 
     /// Get metrics count
     pub fn count(&self) -> usize {
-        self.metrics.read()
-            .map(|m| m.len())
-            .unwrap_or(0)
+        self.metrics.read().map(|m| m.len()).unwrap_or(0)
     }
 
     /// Export metrics as JSON
@@ -211,7 +232,8 @@ impl MetricsCollector {
         let mut output = String::from("timestamp,query_name,query_type,server,duration_ms,response_size,answer_count,success,response_code\n");
 
         for metric in metrics {
-            output.push_str(&format!("{},{},{},{},{},{},{},{},{}\n",
+            output.push_str(&format!(
+                "{},{},{},{},{},{},{},{},{}\n",
                 metric.timestamp.format("%Y-%m-%d %H:%M:%S"),
                 metric.query_name,
                 metric.query_type,
@@ -236,7 +258,9 @@ pub struct Timing {
 impl Timing {
     /// Start a new timing measurement
     pub fn start() -> Self {
-        Self { start: Instant::now() }
+        Self {
+            start: Instant::now(),
+        }
     }
 
     /// Get the elapsed time

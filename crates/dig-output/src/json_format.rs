@@ -18,7 +18,10 @@ pub struct JsonFormatter {
 impl JsonFormatter {
     /// Create a new JSON formatter
     pub fn new(config: OutputConfig) -> Self {
-        Self { config, pretty: true }
+        Self {
+            config,
+            pretty: true,
+        }
     }
 
     /// Create with default config
@@ -90,11 +93,9 @@ impl OutputFormatter for JsonFormatter {
         let json = self.result_to_json(result);
 
         if self.pretty {
-            to_string_pretty(&json)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            to_string_pretty(&json).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
         } else {
-            serde_json::to_string(&json)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            serde_json::to_string(&json).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
         }
     }
 
@@ -116,48 +117,57 @@ impl OutputFormatter for JsonFormatter {
             },
         });
 
-        serde_json::to_string(&header)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&header).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn format_question(&self, result: &LookupResult) -> io::Result<String> {
-        let questions: Vec<Value> = result.message.question.iter()
-            .map(|q| json!({
-                "name": q.name,
-                "type": q.qtype,
-                "class": q.qclass,
-            }))
+        let questions: Vec<Value> = result
+            .message
+            .question
+            .iter()
+            .map(|q| {
+                json!({
+                    "name": q.name,
+                    "type": q.qtype,
+                    "class": q.qclass,
+                })
+            })
             .collect();
 
-        serde_json::to_string(&questions)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&questions).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn format_answer(&self, result: &LookupResult) -> io::Result<String> {
-        let answers: Vec<Value> = result.message.answer.iter()
+        let answers: Vec<Value> = result
+            .message
+            .answer
+            .iter()
             .map(|r| self.record_to_json(r))
             .collect();
 
-        serde_json::to_string(&answers)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&answers).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn format_authority(&self, result: &LookupResult) -> io::Result<String> {
-        let authority: Vec<Value> = result.message.authority.iter()
+        let authority: Vec<Value> = result
+            .message
+            .authority
+            .iter()
             .map(|r| self.record_to_json(r))
             .collect();
 
-        serde_json::to_string(&authority)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&authority).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn format_additional(&self, result: &LookupResult) -> io::Result<String> {
-        let additional: Vec<Value> = result.message.additional.iter()
+        let additional: Vec<Value> = result
+            .message
+            .additional
+            .iter()
             .map(|r| self.record_to_json(r))
             .collect();
 
-        serde_json::to_string(&additional)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&additional).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn format_stats(&self, result: &LookupResult) -> io::Result<String> {
@@ -168,7 +178,6 @@ impl OutputFormatter for JsonFormatter {
             "timestamp": result.timestamp,
         });
 
-        serde_json::to_string(&stats)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&stats).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }

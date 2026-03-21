@@ -110,9 +110,8 @@ impl ResolverConfig {
         config.nameservers.clear();
 
         for line in reader.lines() {
-            let line = line.map_err(|e| {
-                DigError::ConfigError(format!("Failed to read resolv.conf: {}", e))
-            })?;
+            let line = line
+                .map_err(|e| DigError::ConfigError(format!("Failed to read resolv.conf: {}", e)))?;
 
             let line = line.trim();
 
@@ -141,10 +140,7 @@ impl ResolverConfig {
                     config.domain = Some(value.to_string());
                 }
                 "search" => {
-                    config.search = value
-                        .split_whitespace()
-                        .map(|s| s.to_string())
-                        .collect();
+                    config.search = value.split_whitespace().map(|s| s.to_string()).collect();
                 }
                 "options" => {
                     for opt in value.split_whitespace() {
@@ -272,9 +268,7 @@ fn get_windows_dns_servers() -> Result<Vec<SocketAddr>> {
         let output = Command::new("ipconfig")
             .args(["/all"])
             .output()
-            .map_err(|e| {
-                DigError::ConfigError(format!("Failed to run ipconfig: {}", e))
-            })?;
+            .map_err(|e| DigError::ConfigError(format!("Failed to run ipconfig: {}", e)))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut servers = Vec::new();

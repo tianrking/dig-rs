@@ -3,9 +3,9 @@
 //! This module provides intelligent DNS diagnostics that go beyond
 //! simple lookups to identify and explain DNS issues.
 
-use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use crate::config::DigConfig;
 use crate::error::{DigError, Result};
@@ -132,9 +132,9 @@ pub struct LatencyThresholds {
 impl Default for LatencyThresholds {
     fn default() -> Self {
         Self {
-            fast: 50,      // < 50ms is fast
+            fast: 50,        // < 50ms is fast
             acceptable: 200, // < 200ms is acceptable
-            slow: 500,    // > 500ms is slow
+            slow: 500,       // > 500ms is slow
         }
     }
 }
@@ -143,8 +143,8 @@ impl Default for DiagnosticConfig {
     fn default() -> Self {
         Self {
             test_resolvers: vec![
-                "8.8.8.8".to_string(),      // Google
-                "1.1.1.1".to_string(),      // Cloudflare
+                "8.8.8.8".to_string(),        // Google
+                "1.1.1.1".to_string(),        // Cloudflare
                 "208.67.222.222".to_string(), // OpenDNS
             ],
             latency_thresholds: LatencyThresholds::default(),
@@ -249,7 +249,11 @@ impl DnsDiagnostic {
                     });
                 }
 
-                Ok(CheckWithIssues { check, issues, recommendations })
+                Ok(CheckWithIssues {
+                    check,
+                    issues,
+                    recommendations,
+                })
             }
             Err(e) => {
                 let check = CheckResult {
@@ -270,7 +274,11 @@ impl DnsDiagnostic {
                 recommendations.push("Check if the domain name is correct".to_string());
                 recommendations.push("Verify network connectivity".to_string());
 
-                Ok(CheckWithIssues { check, issues, recommendations })
+                Ok(CheckWithIssues {
+                    check,
+                    issues,
+                    recommendations,
+                })
             }
         }
     }
@@ -310,15 +318,21 @@ impl DnsDiagnostic {
                 severity: IssueSeverity::Warning,
                 category: IssueCategory::Performance,
                 description: "High DNS latency detected".to_string(),
-                details: Some(format!("{}ms is above the slow threshold of {}ms",
-                    latency, self.config.latency_thresholds.slow)),
+                details: Some(format!(
+                    "{}ms is above the slow threshold of {}ms",
+                    latency, self.config.latency_thresholds.slow
+                )),
             });
 
             recommendations.push("Consider using a closer DNS resolver".to_string());
             recommendations.push("Check for network congestion".to_string());
         }
 
-        Ok(CheckWithIssues { check, issues, recommendations })
+        Ok(CheckWithIssues {
+            check,
+            issues,
+            recommendations,
+        })
     }
 
     /// Check consistency across resolvers
@@ -328,14 +342,15 @@ impl DnsDiagnostic {
 
         let mut results = Vec::new();
         for resolver in &self.config.test_resolvers {
-            let config = DigConfig::new(domain).with_server(
-                crate::config::ServerConfig::new(resolver)
-            );
+            let config =
+                DigConfig::new(domain).with_server(crate::config::ServerConfig::new(resolver));
             let lookup = DigLookup::new(config);
 
             match lookup.lookup().await {
                 Ok(result) => {
-                    let answers: Vec<String> = result.message.answer
+                    let answers: Vec<String> = result
+                        .message
+                        .answer
                         .iter()
                         .map(|a| a.rdata.clone())
                         .collect();
@@ -348,9 +363,8 @@ impl DnsDiagnostic {
         }
 
         // Check for consistency
-        let unique_answer_sets: HashSet<_> = results.iter()
-            .map(|(_, answers)| answers.clone())
-            .collect();
+        let unique_answer_sets: HashSet<_> =
+            results.iter().map(|(_, answers)| answers.clone()).collect();
 
         let status = if unique_answer_sets.len() == 1 {
             CheckStatus::Pass
@@ -373,15 +387,22 @@ impl DnsDiagnostic {
                 severity: IssueSeverity::Warning,
                 category: IssueCategory::Consistency,
                 description: "Inconsistent results across resolvers".to_string(),
-                details: Some(format!("Got {} different result sets from {} resolvers",
-                    unique_answer_sets.len(), results.len())),
+                details: Some(format!(
+                    "Got {} different result sets from {} resolvers",
+                    unique_answer_sets.len(),
+                    results.len()
+                )),
             });
 
             recommendations.push("DNS propagation may be in progress".to_string());
             recommendations.push("Some resolvers may be returning cached data".to_string());
         }
 
-        Ok(CheckWithIssues { check, issues, recommendations })
+        Ok(CheckWithIssues {
+            check,
+            issues,
+            recommendations,
+        })
     }
 
     /// Check DNS security
@@ -395,7 +416,10 @@ impl DnsDiagnostic {
 
         let check = match lookup.lookup().await {
             Ok(result) => {
-                let has_dnssec = result.message.answer.iter()
+                let has_dnssec = result
+                    .message
+                    .answer
+                    .iter()
                     .any(|a| a.rtype.contains("DNSKEY") || a.rtype.contains("RRSIG"));
 
                 if has_dnssec {
@@ -416,18 +440,20 @@ impl DnsDiagnostic {
                     }
                 }
             }
-            Err(_) => {
-                CheckResult {
-                    name: "DNS Security".to_string(),
-                    description: "DNSSEC support".to_string(),
-                    status: CheckStatus::Skip,
-                    value: None,
-                    expected: None,
-                }
-            }
+            Err(_) => CheckResult {
+                name: "DNS Security".to_string(),
+                description: "DNSSEC support".to_string(),
+                status: CheckStatus::Skip,
+                value: None,
+                expected: None,
+            },
         };
 
-        Ok(CheckWithIssues { check, issues, recommendations })
+        Ok(CheckWithIssues {
+            check,
+            issues,
+            recommendations,
+        })
     }
 
     /// Detect CDN usage
@@ -447,15 +473,13 @@ impl DnsDiagnostic {
                     expected: None,
                 }
             }
-            Err(_) => {
-                CheckResult {
-                    name: "CDN Detection".to_string(),
-                    description: "Content Delivery Network detection".to_string(),
-                    status: CheckStatus::Skip,
-                    value: None,
-                    expected: None,
-                }
-            }
+            Err(_) => CheckResult {
+                name: "CDN Detection".to_string(),
+                description: "Content Delivery Network detection".to_string(),
+                status: CheckStatus::Skip,
+                value: None,
+                expected: None,
+            },
         };
 
         Ok(CheckWithIssues {
@@ -469,50 +493,80 @@ impl DnsDiagnostic {
     pub fn detect_cdn_from_result(&self, result: &LookupResult) -> String {
         // Enhanced CDN detection with more providers and patterns
         let cdns = [
-            ("Cloudflare", vec![
-                "cloudflare", "cf-", "cloudflareinsights",
-                "104.16.", "104.17.", "104.18.", "104.19.", "104.20.",
-                "172.64.", "162.159.", "188.114.",
-            ]),
-            ("Akamai", vec![
-                "akamai", "akamaiedge", "akamaitech", "akamaihd",
-                "23.32.", "23.33.", "23.44.", "23.50.", "23.60.",
-                "104.80.", "104.85.", "104.86.",
-            ]),
-            ("Fastly", vec![
-                "fastly", "fastlylb", "fastly-ssl",
-                "151.101.", "199.27.",
-            ]),
-            ("AWS CloudFront", vec![
-                "cloudfront", "aws", "cloudfront.net",
-                "13.32.", "13.33.", "13.34.", "13.35.",
-            ]),
-            ("Azure CDN", vec![
-                "azureedge", "azurefd", "azure.microsoft",
-                "azure-trafficmanager",
-            ]),
-            ("Google Cloud CDN", vec![
-                "cloud.google", "googleusercontent", "gcp",
-                "gslb.", "l.googleusercontent",
-            ]),
-            ("Incapsula", vec![
-                "incapula", "incapsula", "inscname",
-            ]),
-            ("StackPath", vec![
-                "stackpath", "stackpathdns",
-            ]),
-            ("BunnyCDN", vec![
-                "bunnycdn", "bunny.net",
-            ]),
-            ("KeyCDN", vec![
-                "keycdn", "kxcdn",
-            ]),
-            ("CDN77", vec![
-                "cdn77", "cdn77.org",
-            ]),
-            ("QUIC.cloud", vec![
-                "quic.cloud", "qc.",
-            ]),
+            (
+                "Cloudflare",
+                vec![
+                    "cloudflare",
+                    "cf-",
+                    "cloudflareinsights",
+                    "104.16.",
+                    "104.17.",
+                    "104.18.",
+                    "104.19.",
+                    "104.20.",
+                    "172.64.",
+                    "162.159.",
+                    "188.114.",
+                ],
+            ),
+            (
+                "Akamai",
+                vec![
+                    "akamai",
+                    "akamaiedge",
+                    "akamaitech",
+                    "akamaihd",
+                    "23.32.",
+                    "23.33.",
+                    "23.44.",
+                    "23.50.",
+                    "23.60.",
+                    "104.80.",
+                    "104.85.",
+                    "104.86.",
+                ],
+            ),
+            (
+                "Fastly",
+                vec!["fastly", "fastlylb", "fastly-ssl", "151.101.", "199.27."],
+            ),
+            (
+                "AWS CloudFront",
+                vec![
+                    "cloudfront",
+                    "aws",
+                    "cloudfront.net",
+                    "13.32.",
+                    "13.33.",
+                    "13.34.",
+                    "13.35.",
+                ],
+            ),
+            (
+                "Azure CDN",
+                vec![
+                    "azureedge",
+                    "azurefd",
+                    "azure.microsoft",
+                    "azure-trafficmanager",
+                ],
+            ),
+            (
+                "Google Cloud CDN",
+                vec![
+                    "cloud.google",
+                    "googleusercontent",
+                    "gcp",
+                    "gslb.",
+                    "l.googleusercontent",
+                ],
+            ),
+            ("Incapsula", vec!["incapula", "incapsula", "inscname"]),
+            ("StackPath", vec!["stackpath", "stackpathdns"]),
+            ("BunnyCDN", vec!["bunnycdn", "bunny.net"]),
+            ("KeyCDN", vec!["keycdn", "kxcdn"]),
+            ("CDN77", vec!["cdn77", "cdn77.org"]),
+            ("QUIC.cloud", vec!["quic.cloud", "qc."]),
         ];
 
         // Check answer records
@@ -573,7 +627,10 @@ impl DnsDiagnostic {
             return HealthStatus::Warning;
         }
 
-        if checks.iter().all(|c| c.status == CheckStatus::Pass || c.status == CheckStatus::Skip) {
+        if checks
+            .iter()
+            .all(|c| c.status == CheckStatus::Pass || c.status == CheckStatus::Skip)
+        {
             return HealthStatus::Healthy;
         }
 
@@ -671,7 +728,9 @@ pub async fn compare_resolvers(
         match lookup.lookup().await {
             Ok(result) => {
                 let latency = start.elapsed().as_millis() as u64;
-                let answers: Vec<String> = result.message.answer
+                let answers: Vec<String> = result
+                    .message
+                    .answer
                     .iter()
                     .map(|a| a.rdata.clone())
                     .collect();
@@ -713,12 +772,10 @@ pub async fn compare_resolvers(
 }
 
 /// Check consistency across resolver results
-fn check_consistency(
-    results: &[ResolverResult],
-    inconsistencies: &mut Vec<Inconsistency>,
-) -> bool {
+fn check_consistency(results: &[ResolverResult], inconsistencies: &mut Vec<Inconsistency>) -> bool {
     // Check if any failed
-    let failed_resolvers: Vec<_> = results.iter()
+    let failed_resolvers: Vec<_> = results
+        .iter()
         .filter(|r| !r.success)
         .map(|r| r.resolver.clone())
         .collect();
@@ -734,16 +791,12 @@ fn check_consistency(
     }
 
     // Check answer consistency
-    let answer_sets: Vec<_> = results.iter()
-        .map(|r| r.answers.clone())
-        .collect();
+    let answer_sets: Vec<_> = results.iter().map(|r| r.answers.clone()).collect();
 
     let unique_sets: HashSet<_> = answer_sets.iter().collect();
 
     if unique_sets.len() > 1 {
-        let inconsistent_resolvers: Vec<_> = results.iter()
-            .map(|r| r.resolver.clone())
-            .collect();
+        let inconsistent_resolvers: Vec<_> = results.iter().map(|r| r.resolver.clone()).collect();
 
         inconsistencies.push(Inconsistency {
             inconsistency_type: InconsistencyType::DifferentAnswers,
@@ -811,8 +864,8 @@ pub async fn detect_pollution(
 ) -> Result<PollutionDetectionResult> {
     // Trusted international resolvers
     let trusted_resolvers = vec![
-        "8.8.8.8",    // Google
-        "1.1.1.1",    // Cloudflare
+        "8.8.8.8",        // Google
+        "1.1.1.1",        // Cloudflare
         "208.67.222.222", // OpenDNS
     ];
 
@@ -837,7 +890,9 @@ pub async fn detect_pollution(
 
         match lookup.lookup().await {
             Ok(result) => {
-                let answers: Vec<String> = result.message.answer
+                let answers: Vec<String> = result
+                    .message
+                    .answer
                     .iter()
                     .map(|a| a.rdata.clone())
                     .collect();
@@ -875,7 +930,9 @@ pub async fn detect_pollution(
 
         match lookup.lookup().await {
             Ok(result) => {
-                let answers: Vec<String> = result.message.answer
+                let answers: Vec<String> = result
+                    .message
+                    .answer
                     .iter()
                     .map(|a| a.rdata.clone())
                     .collect();
@@ -936,7 +993,8 @@ fn analyze_pollution(
     suspicious: &[ResolverResult],
 ) -> PollutionAnalysisInternal {
     // Get reference answers from trusted resolvers
-    let trusted_answers: Vec<_> = trusted.iter()
+    let trusted_answers: Vec<_> = trusted
+        .iter()
         .filter(|r| r.success)
         .flat_map(|r| r.answers.clone())
         .collect::<HashSet<_>>()
@@ -960,15 +1018,18 @@ fn analyze_pollution(
                 return PollutionAnalysisInternal {
                     polluted: true,
                     pollution_type: Some(PollutionType::Blocking),
-                    description: format!("{} returned {} instead of valid answers",
-                        susp.resolver, susp.rcode),
+                    description: format!(
+                        "{} returned {} instead of valid answers",
+                        susp.resolver, susp.rcode
+                    ),
                     confidence: 80,
                 };
             }
         } else {
             // Check for hijacking or redirection
             let susp_answers: Vec<_> = susp.answers.clone();
-            let common = trusted_answers.iter()
+            let common = trusted_answers
+                .iter()
                 .filter(|t| susp_answers.contains(t))
                 .count();
 
@@ -977,8 +1038,10 @@ fn analyze_pollution(
                 return PollutionAnalysisInternal {
                     polluted: true,
                     pollution_type: Some(PollutionType::Hijacking),
-                    description: format!("{} returned completely different answers: {:?}",
-                        susp.resolver, susp_answers),
+                    description: format!(
+                        "{} returned completely different answers: {:?}",
+                        susp.resolver, susp_answers
+                    ),
                     confidence: 90,
                 };
             }
@@ -988,8 +1051,10 @@ fn analyze_pollution(
                 return PollutionAnalysisInternal {
                     polluted: true,
                     pollution_type: Some(PollutionType::Redirection),
-                    description: format!("{} returned different answers than trusted resolvers",
-                        susp.resolver),
+                    description: format!(
+                        "{} returned different answers than trusted resolvers",
+                        susp.resolver
+                    ),
                     confidence: 60,
                 };
             }
@@ -1033,6 +1098,9 @@ mod tests {
             details: None,
         };
 
-        assert_eq!(inconsistency.inconsistency_type, InconsistencyType::DifferentAnswers);
+        assert_eq!(
+            inconsistency.inconsistency_type,
+            InconsistencyType::DifferentAnswers
+        );
     }
 }
