@@ -466,17 +466,56 @@ impl DnsDiagnostic {
     }
 
     /// Detect CDN from lookup result
-    fn detect_cdn_from_result(&self, result: &LookupResult) -> String {
+    pub fn detect_cdn_from_result(&self, result: &LookupResult) -> String {
+        // Enhanced CDN detection with more providers and patterns
         let cdns = [
-            ("Cloudflare", vec!["cloudflare", "cf-", "1.1.1.1", "104.16."]),
-            ("Akamai", vec!["akamai", "akamaiedge", "akamaitech"]),
-            ("Fastly", vec!["fastly", "fastlylb"]),
-            ("AWS CloudFront", vec!["cloudfront", "aws"]),
-            ("Azure CDN", vec!["azureedge", "azurefd"]),
-            ("Google Cloud", vec!["cloudflare", "googleusercontent"]),
-            ("Incapsula", vec!["incapula"]),
+            ("Cloudflare", vec![
+                "cloudflare", "cf-", "cloudflareinsights",
+                "104.16.", "104.17.", "104.18.", "104.19.", "104.20.",
+                "172.64.", "162.159.", "188.114.",
+            ]),
+            ("Akamai", vec![
+                "akamai", "akamaiedge", "akamaitech", "akamaihd",
+                "23.32.", "23.33.", "23.44.", "23.50.", "23.60.",
+                "104.80.", "104.85.", "104.86.",
+            ]),
+            ("Fastly", vec![
+                "fastly", "fastlylb", "fastly-ssl",
+                "151.101.", "199.27.",
+            ]),
+            ("AWS CloudFront", vec![
+                "cloudfront", "aws", "cloudfront.net",
+                "13.32.", "13.33.", "13.34.", "13.35.",
+            ]),
+            ("Azure CDN", vec![
+                "azureedge", "azurefd", "azure.microsoft",
+                "azure-trafficmanager",
+            ]),
+            ("Google Cloud CDN", vec![
+                "cloud.google", "googleusercontent", "gcp",
+                "gslb.", "l.googleusercontent",
+            ]),
+            ("Incapsula", vec![
+                "incapula", "incapsula", "inscname",
+            ]),
+            ("StackPath", vec![
+                "stackpath", "stackpathdns",
+            ]),
+            ("BunnyCDN", vec![
+                "bunnycdn", "bunny.net",
+            ]),
+            ("KeyCDN", vec![
+                "keycdn", "kxcdn",
+            ]),
+            ("CDN77", vec![
+                "cdn77", "cdn77.org",
+            ]),
+            ("QUIC.cloud", vec![
+                "quic.cloud", "qc.",
+            ]),
         ];
 
+        // Check answer records
         for answer in &result.message.answer {
             let answer_lower = answer.rdata.to_lowercase();
 
@@ -485,6 +524,38 @@ impl DnsDiagnostic {
                     if answer_lower.contains(pattern) {
                         return cdn_name.to_string();
                     }
+                }
+            }
+        }
+
+        // Check NS records for CDN-hosted domains
+        for auth in &result.message.authority {
+            if auth.rtype == "NS" {
+                let ns_lower = auth.rdata.to_lowercase();
+
+                // Cloudflare NS
+                if ns_lower.contains("ns.cloudflare") || ns_lower.contains("cloudflare") {
+                    return "Cloudflare (NS)".to_string();
+                }
+                // AWS Route53 NS
+                if ns_lower.contains("awsdns") || ns_lower.contains("route53") {
+                    return "AWS Route53".to_string();
+                }
+                // Akamai NS
+                if ns_lower.contains("akamai") || ns_lower.contains("akamaiedge") {
+                    return "Akamai (NS)".to_string();
+                }
+                // Fastly NS
+                if ns_lower.contains("fastly") || ns_lower.contains("fastlylb") {
+                    return "Fastly (NS)".to_string();
+                }
+                // Azure NS
+                if ns_lower.contains("azure") || ns_lower.contains("azure-dns") {
+                    return "Azure DNS".to_string();
+                }
+                // Google NS
+                if ns_lower.contains("google") || ns_lower.contains("googledomains") {
+                    return "Google Cloud (NS)".to_string();
                 }
             }
         }
@@ -684,6 +755,253 @@ fn check_consistency(
     }
 
     true
+}
+
+/// DNS pollution detection result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PollutionDetectionResult {
+    /// Domain checked
+    pub domain: String,
+    /// Whether pollution is suspected
+    pub polluted: bool,
+    /// Pollution type detected (if any)
+    pub pollution_type: Option<PollutionType>,
+    /// Results from trusted resolvers
+    pub trusted_results: Vec<ResolverResult>,
+    /// Results from suspicious resolvers
+    pub suspicious_results: Vec<ResolverResult>,
+    /// Analysis details
+    pub analysis: PollutionAnalysis,
+    /// Timestamp
+    pub timestamp: chrono::DateTime<chrono::Local>,
+}
+
+/// Type of DNS pollution detected
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PollutionType {
+    /// DNS hijacking (different IP returned)
+    Hijacking,
+    /// DNS blocking (NXDOMAIN or refused)
+    Blocking,
+    /// DNS redirection (wrong IP pointing to block page)
+    Redirection,
+    /// DNS injection (fake records injected)
+    Injection,
+}
+
+/// Detailed pollution analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PollutionAnalysis {
+    /// Number of resolvers checked
+    pub total_resolvers: usize,
+    /// Number of trusted resolvers
+    pub trusted_count: usize,
+    /// Number of suspicious resolvers
+    pub suspicious_count: usize,
+    /// Description of what was found
+    pub description: String,
+    /// Confidence level (0-100)
+    pub confidence: u8,
+}
+
+/// Detect DNS pollution by comparing trusted vs suspicious resolvers
+pub async fn detect_pollution(
+    domain: &str,
+    query_type: Option<&str>,
+) -> Result<PollutionDetectionResult> {
+    // Trusted international resolvers
+    let trusted_resolvers = vec![
+        "8.8.8.8",    // Google
+        "1.1.1.1",    // Cloudflare
+        "208.67.222.222", // OpenDNS
+    ];
+
+    // Resolvers that might be polluted (region-specific)
+    // In practice, users would configure these based on their location
+    let suspicious_resolvers: Vec<String> = vec![
+        // User can add specific resolvers to test
+    ];
+
+    // Save lengths for later use
+    let trusted_count = trusted_resolvers.len();
+    let suspicious_count = suspicious_resolvers.len();
+
+    // Query trusted resolvers
+    let mut trusted_results = Vec::new();
+    for resolver in trusted_resolvers {
+        let config = DigConfig::new(domain)
+            .with_server(crate::config::ServerConfig::new(resolver.to_string()))
+            .with_query_type(query_type.unwrap_or("A"));
+
+        let lookup = DigLookup::new(config);
+
+        match lookup.lookup().await {
+            Ok(result) => {
+                let answers: Vec<String> = result.message.answer
+                    .iter()
+                    .map(|a| a.rdata.clone())
+                    .collect();
+
+                trusted_results.push(ResolverResult {
+                    resolver: resolver.to_string(),
+                    success: true,
+                    latency_ms: 0,
+                    answers,
+                    rcode: result.message.rcode,
+                    error: None,
+                });
+            }
+            Err(_) => {
+                trusted_results.push(ResolverResult {
+                    resolver: resolver.to_string(),
+                    success: false,
+                    latency_ms: 0,
+                    answers: Vec::new(),
+                    rcode: "FAILED".to_string(),
+                    error: Some("Query failed".to_string()),
+                });
+            }
+        }
+    }
+
+    // Query suspicious resolvers (if any provided)
+    let mut suspicious_results = Vec::new();
+    for resolver in suspicious_resolvers {
+        let config = DigConfig::new(domain)
+            .with_server(crate::config::ServerConfig::new(resolver.as_str()))
+            .with_query_type(query_type.unwrap_or("A"));
+
+        let lookup = DigLookup::new(config);
+
+        match lookup.lookup().await {
+            Ok(result) => {
+                let answers: Vec<String> = result.message.answer
+                    .iter()
+                    .map(|a| a.rdata.clone())
+                    .collect();
+
+                suspicious_results.push(ResolverResult {
+                    resolver: resolver.clone(),
+                    success: true,
+                    latency_ms: 0,
+                    answers,
+                    rcode: result.message.rcode,
+                    error: None,
+                });
+            }
+            Err(_) => {
+                suspicious_results.push(ResolverResult {
+                    resolver: resolver.clone(),
+                    success: false,
+                    latency_ms: 0,
+                    answers: Vec::new(),
+                    rcode: "FAILED".to_string(),
+                    error: Some("Query failed".to_string()),
+                });
+            }
+        }
+    }
+
+    // Analyze results for pollution
+    let analysis = analyze_pollution(&trusted_results, &suspicious_results);
+
+    Ok(PollutionDetectionResult {
+        domain: domain.to_string(),
+        polluted: analysis.polluted,
+        pollution_type: analysis.pollution_type,
+        trusted_results,
+        suspicious_results,
+        analysis: PollutionAnalysis {
+            total_resolvers: trusted_count + suspicious_count,
+            trusted_count,
+            suspicious_count,
+            description: analysis.description,
+            confidence: analysis.confidence,
+        },
+        timestamp: chrono::Local::now(),
+    })
+}
+
+/// Internal analysis result
+struct PollutionAnalysisInternal {
+    polluted: bool,
+    pollution_type: Option<PollutionType>,
+    description: String,
+    confidence: u8,
+}
+
+/// Analyze trusted vs suspicious results for pollution patterns
+fn analyze_pollution(
+    trusted: &[ResolverResult],
+    suspicious: &[ResolverResult],
+) -> PollutionAnalysisInternal {
+    // Get reference answers from trusted resolvers
+    let trusted_answers: Vec<_> = trusted.iter()
+        .filter(|r| r.success)
+        .flat_map(|r| r.answers.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    if trusted_answers.is_empty() {
+        return PollutionAnalysisInternal {
+            polluted: false,
+            pollution_type: None,
+            description: "No trusted answers to compare".to_string(),
+            confidence: 0,
+        };
+    }
+
+    // Check each suspicious resolver
+    for susp in suspicious {
+        if !susp.success {
+            // Blocking detected
+            if susp.rcode == "NXDOMAIN" || susp.rcode == "REFUSED" {
+                return PollutionAnalysisInternal {
+                    polluted: true,
+                    pollution_type: Some(PollutionType::Blocking),
+                    description: format!("{} returned {} instead of valid answers",
+                        susp.resolver, susp.rcode),
+                    confidence: 80,
+                };
+            }
+        } else {
+            // Check for hijacking or redirection
+            let susp_answers: Vec<_> = susp.answers.clone();
+            let common = trusted_answers.iter()
+                .filter(|t| susp_answers.contains(t))
+                .count();
+
+            // No common answers suggests hijacking
+            if common == 0 && !susp_answers.is_empty() {
+                return PollutionAnalysisInternal {
+                    polluted: true,
+                    pollution_type: Some(PollutionType::Hijacking),
+                    description: format!("{} returned completely different answers: {:?}",
+                        susp.resolver, susp_answers),
+                    confidence: 90,
+                };
+            }
+
+            // Partial overlap might indicate redirection
+            if common < susp_answers.len() && common < trusted_answers.len() {
+                return PollutionAnalysisInternal {
+                    polluted: true,
+                    pollution_type: Some(PollutionType::Redirection),
+                    description: format!("{} returned different answers than trusted resolvers",
+                        susp.resolver),
+                    confidence: 60,
+                };
+            }
+        }
+    }
+
+    PollutionAnalysisInternal {
+        polluted: false,
+        pollution_type: None,
+        description: "No pollution detected".to_string(),
+        confidence: 70,
+    }
 }
 
 #[cfg(test)]
