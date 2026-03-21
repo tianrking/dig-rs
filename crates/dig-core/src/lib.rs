@@ -10,6 +10,7 @@
 
 pub mod batch;
 pub mod config;
+pub mod diagnostic;
 pub mod edns;
 pub mod error;
 pub mod lookup;
@@ -22,6 +23,10 @@ pub mod zonetransfer;
 
 pub use batch::{BatchProcessor, BatchConfig, BatchQuery, BatchResult};
 pub use config::DigConfig;
+pub use diagnostic::{
+    DnsDiagnostic, HealthCheck, HealthStatus, CheckResult, CheckStatus,
+    ComparisonResult, ResolverResult, compare_resolvers,
+};
 pub use edns::{EdnsOption, EdnsOptionCode, CookieOption, NsidOption, SubnetOption};
 pub use error::{DigError, Result};
 pub use lookup::{DigLookup, LookupResult};

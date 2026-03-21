@@ -39,7 +39,7 @@ brew install dig-rs
 ### 从源码编译
 
 ```bash
-git clone https://github.com/dig-rs/dig-rs.git
+git clone https://github.com/tianrkling/dig-rs.git
 cd dig-rs
 cargo install --path .
 ```
@@ -298,5 +298,5 @@ dig-rs 经过了性能优化：
 ## 联系方式
 
 - **作者**：tianrking <tian.r.king@gmail.com>
-- **问题反馈**：[GitHub Issues](https://github.com/dig-rs/dig-rs/issues)
-- **讨论**：[GitHub Discussions](https://github.com/dig-rs/dig-rs/discussions)
+- **问题反馈**：[GitHub Issues](https://github.com/tianrkling/dig-rs/issues)
+- **讨论**：[GitHub Discussions](https://github.com/tianrkling/dig-rs/discussions)
