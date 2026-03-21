@@ -1,0 +1,23 @@
+[package]
+name = "dig-core"
+description = "Core DNS query library for dig-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+hickory-proto.workspace = true
+hickory-client.workspace = true
+hickory-resolver.workspace = true
+tokio.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+ipnetwork.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tokio-test = "0.4"

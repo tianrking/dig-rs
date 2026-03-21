@@ -1,0 +1,30 @@
+[package]
+name = "dig"
+description = "A modern, cross-platform DNS lookup utility - dig reimagined in Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dig"
+path = "src/main.rs"
+
+[dependencies]
+dig-core.workspace = true
+dig-output.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winsock2", "ws2def"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
