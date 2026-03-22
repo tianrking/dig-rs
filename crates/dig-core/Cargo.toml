@@ -39,7 +39,7 @@ modern = ["dot", "doh"]
 
 [dev-dependencies]
 tokio-test = "0.4"
-criterion = "0.5"
+criterion = { version = "0.5", features = ["async_tokio"] }
 
 [[bench]]
 name = "dns_benchmark"
