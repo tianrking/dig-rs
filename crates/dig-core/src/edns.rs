@@ -300,12 +300,12 @@ impl SubnetOption {
         match self.address {
             IpAddr::V4(addr) => {
                 let bytes = addr.octets();
-                let prefix_bytes = ((self.source_prefix as usize) + 7) / 8;
+                let prefix_bytes = (self.source_prefix as usize).div_ceil(8);
                 data.extend_from_slice(&bytes[0..prefix_bytes.min(4)]);
             }
             IpAddr::V6(addr) => {
                 let bytes = addr.octets();
-                let prefix_bytes = ((self.source_prefix as usize) + 7) / 8;
+                let prefix_bytes = (self.source_prefix as usize).div_ceil(8);
                 data.extend_from_slice(&bytes[0..prefix_bytes.min(16)]);
             }
         }

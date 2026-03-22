@@ -140,7 +140,7 @@ impl DnsTrace {
             .config
             .query_type
             .parse()
-            .map_err(|e| DigError::UnsupportedRecordType(e))?;
+            .map_err(DigError::UnsupportedRecordType)?;
         let hickory_type = self.to_hickory_record_type(record_type);
 
         // Start with root servers

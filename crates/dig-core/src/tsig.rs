@@ -41,7 +41,7 @@ pub enum TsigAlgorithm {
 
 impl TsigAlgorithm {
     /// Parse algorithm from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_str_name(s: &str) -> Option<Self> {
         match s.to_uppercase().as_str() {
             "HMAC-MD5.SIG-ALG.REG.INT" | "MD5" | "HMACMD5" | "HMAC-MD5" => {
                 Some(TsigAlgorithm::HMACMD5)
@@ -120,7 +120,7 @@ impl TsigKey {
         let key_part = parts[1];
 
         let (algorithm_str, key_data) = key_part.split_once(':')?;
-        let algorithm = TsigAlgorithm::from_str(algorithm_str)?;
+        let algorithm = TsigAlgorithm::from_str_name(algorithm_str)?;
 
         Some(Self {
             name: name.to_string(),
@@ -142,32 +142,30 @@ impl TsigKey {
         let content = content.trim();
 
         // Extract key name
-        let name_start = content
-            .find("key \"")
-            .ok_or_else(|| TsigError::InvalidKeyFormat)?;
+        let name_start = content.find("key \"").ok_or(TsigError::InvalidKeyFormat)?;
         let name_end = content[name_start + 5..]
             .find('"')
-            .ok_or_else(|| TsigError::InvalidKeyFormat)?;
+            .ok_or(TsigError::InvalidKeyFormat)?;
         let name = content[name_start + 5..name_start + 5 + name_end].to_string();
 
         // Extract algorithm
         let alg_start = content
             .find("algorithm \"")
-            .ok_or_else(|| TsigError::InvalidKeyFormat)?;
+            .ok_or(TsigError::InvalidKeyFormat)?;
         let alg_end = content[alg_start + 11..]
             .find('"')
-            .ok_or_else(|| TsigError::InvalidKeyFormat)?;
+            .ok_or(TsigError::InvalidKeyFormat)?;
         let algorithm_str = &content[alg_start + 11..alg_start + 11 + alg_end];
-        let algorithm = TsigAlgorithm::from_str(algorithm_str)
+        let algorithm = TsigAlgorithm::from_str_name(algorithm_str)
             .ok_or_else(|| TsigError::UnsupportedAlgorithm(algorithm_str.to_string()))?;
 
         // Extract secret
         let secret_start = content
             .find("secret \"")
-            .ok_or_else(|| TsigError::InvalidKeyFormat)?;
+            .ok_or(TsigError::InvalidKeyFormat)?;
         let secret_end = content[secret_start + 8..]
             .find('"')
-            .ok_or_else(|| TsigError::InvalidKeyFormat)?;
+            .ok_or(TsigError::InvalidKeyFormat)?;
         let key = content[secret_start + 8..secret_start + 8 + secret_end].to_string();
 
         Ok(Self {
@@ -209,7 +207,7 @@ fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, TsigError> {
 /// Simple hex decode
 fn hex_decode(input: &str) -> std::result::Result<Vec<u8>, TsigError> {
     let input = input.trim_start_matches("0x");
-    if input.len() % 2 != 0 {
+    if !input.len().is_multiple_of(2) {
         return Err(TsigError::InvalidKeyFormat);
     }
 
@@ -254,7 +252,7 @@ impl TsigSigner {
     /// Verify a TSIG signature
     pub fn verify(&self, message: &[u8], signature: &[u8]) -> Result<bool> {
         let computed = self.sign(message)?;
-        Ok(&computed == signature)
+        Ok(computed == signature)
     }
 
     /// Get the key name
@@ -320,15 +318,15 @@ mod tests {
     #[test]
     fn test_algorithm_parsing() {
         assert_eq!(
-            TsigAlgorithm::from_str("hmac-md5"),
+            TsigAlgorithm::from_str_name("hmac-md5"),
             Some(TsigAlgorithm::HMACMD5)
         );
         assert_eq!(
-            TsigAlgorithm::from_str("HMAC-SHA256"),
+            TsigAlgorithm::from_str_name("HMAC-SHA256"),
             Some(TsigAlgorithm::HMACSHA256)
         );
         assert_eq!(
-            TsigAlgorithm::from_str("sha512"),
+            TsigAlgorithm::from_str_name("sha512"),
             Some(TsigAlgorithm::HMACSHA512)
         );
     }

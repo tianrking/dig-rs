@@ -449,10 +449,10 @@ fn print_comparison_report(result: &dig_core::diagnostic::ComparisonResult) {
             };
 
             println!(
-                "  {} → {} ({})",
+                "  {} → {} ({}ms)",
                 resolver.cyan(),
                 resolver_result.answers.join(" ").dimmed(),
-                format!("{}ms", latency)
+                latency
             );
         } else {
             println!(
@@ -511,7 +511,7 @@ fn run_batch(file: &str, base_config: &DigConfig) -> Result<(), DigError> {
                 println!("Time: {}ms", batch_result.exec_time_ms);
 
                 // Format output
-                let output = format_output(&lookup_result, &base_config.output)?;
+                let output = format_output(lookup_result, &base_config.output)?;
                 println!("{}", output);
             }
             Err(e) => {

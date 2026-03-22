@@ -132,7 +132,7 @@ impl DigLookup {
             .config
             .query_type
             .parse()
-            .map_err(|e| DigError::UnsupportedRecordType(e))?;
+            .map_err(DigError::UnsupportedRecordType)?;
         let hickory_type = Self::to_hickory_record_type(record_type);
 
         // Determine query class
@@ -468,7 +468,7 @@ impl DigLookup {
                 let client = reqwest::Client::builder()
                     .use_rustls_tls()
                     .build()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
 
                 let host = if server.port() == 443 {
                     format!("https://{}", server.ip())
@@ -486,12 +486,9 @@ impl DigLookup {
                         .header("Accept", "application/dns-message")
                         .send()
                         .await
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        .map_err(std::io::Error::other)?;
 
-                    let data = response
-                        .bytes()
-                        .await
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let data = response.bytes().await.map_err(std::io::Error::other)?;
 
                     Ok::<Vec<u8>, std::io::Error>(data.to_vec())
                 } else {
@@ -505,12 +502,9 @@ impl DigLookup {
                         .body(buf.clone())
                         .send()
                         .await
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        .map_err(std::io::Error::other)?;
 
-                    let data = response
-                        .bytes()
-                        .await
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let data = response.bytes().await.map_err(std::io::Error::other)?;
 
                     Ok::<Vec<u8>, std::io::Error>(data.to_vec())
                 }
@@ -656,10 +650,12 @@ impl DigLookup {
 impl DigLookup {
     /// Create a lookup for reverse DNS query
     pub fn reverse_lookup(ip: &str) -> Result<Self> {
-        let mut config = DigConfig::default();
-        config.name = ip.to_string();
-        config.query_type = "PTR".to_string();
-        config.reverse = true;
+        let config = DigConfig {
+            name: ip.to_string(),
+            query_type: "PTR".to_string(),
+            reverse: true,
+            ..Default::default()
+        };
         Ok(Self::new(config))
     }
 

@@ -25,6 +25,7 @@ impl JsonFormatter {
     }
 
     /// Create with default config
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self::new(OutputConfig::default())
     }
@@ -93,9 +94,9 @@ impl OutputFormatter for JsonFormatter {
         let json = self.result_to_json(result);
 
         if self.pretty {
-            to_string_pretty(&json).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            to_string_pretty(&json).map_err(io::Error::other)
         } else {
-            serde_json::to_string(&json).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            serde_json::to_string(&json).map_err(io::Error::other)
         }
     }
 
@@ -117,7 +118,7 @@ impl OutputFormatter for JsonFormatter {
             },
         });
 
-        serde_json::to_string(&header).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&header).map_err(io::Error::other)
     }
 
     fn format_question(&self, result: &LookupResult) -> io::Result<String> {
@@ -134,7 +135,7 @@ impl OutputFormatter for JsonFormatter {
             })
             .collect();
 
-        serde_json::to_string(&questions).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&questions).map_err(io::Error::other)
     }
 
     fn format_answer(&self, result: &LookupResult) -> io::Result<String> {
@@ -145,7 +146,7 @@ impl OutputFormatter for JsonFormatter {
             .map(|r| self.record_to_json(r))
             .collect();
 
-        serde_json::to_string(&answers).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&answers).map_err(io::Error::other)
     }
 
     fn format_authority(&self, result: &LookupResult) -> io::Result<String> {
@@ -156,7 +157,7 @@ impl OutputFormatter for JsonFormatter {
             .map(|r| self.record_to_json(r))
             .collect();
 
-        serde_json::to_string(&authority).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&authority).map_err(io::Error::other)
     }
 
     fn format_additional(&self, result: &LookupResult) -> io::Result<String> {
@@ -167,7 +168,7 @@ impl OutputFormatter for JsonFormatter {
             .map(|r| self.record_to_json(r))
             .collect();
 
-        serde_json::to_string(&additional).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&additional).map_err(io::Error::other)
     }
 
     fn format_stats(&self, result: &LookupResult) -> io::Result<String> {
@@ -178,6 +179,6 @@ impl OutputFormatter for JsonFormatter {
             "timestamp": result.timestamp,
         });
 
-        serde_json::to_string(&stats).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        serde_json::to_string(&stats).map_err(io::Error::other)
     }
 }

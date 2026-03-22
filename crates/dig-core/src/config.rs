@@ -125,7 +125,7 @@ impl Default for EdnsConfig {
 }
 
 /// DNSSEC configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DnssecConfig {
     /// Set DNSSEC OK bit (DO)
     pub do_flag: bool,
@@ -135,17 +135,6 @@ pub struct DnssecConfig {
     pub ad_flag: bool,
     /// Request DNSSEC records (RRSIG, DNSKEY, etc.)
     pub dnssec: bool,
-}
-
-impl Default for DnssecConfig {
-    fn default() -> Self {
-        Self {
-            do_flag: false,
-            cd_flag: false,
-            ad_flag: false,
-            dnssec: false,
-        }
-    }
 }
 
 /// Output format options

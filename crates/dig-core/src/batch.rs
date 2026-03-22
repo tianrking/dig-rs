@@ -260,10 +260,8 @@ impl BatchProcessor {
                 exec_time_ms: exec_time,
             });
 
-            if !self.config.continue_on_error {
-                if results.last().unwrap().result.is_err() {
-                    break;
-                }
+            if !self.config.continue_on_error && results.last().unwrap().result.is_err() {
+                break;
             }
         }
 
@@ -276,7 +274,7 @@ impl BatchProcessor {
         use std::thread;
 
         let results = Arc::new(Mutex::new(Vec::new()));
-        let chunk_size = (queries.len() + self.config.parallel - 1) / self.config.parallel;
+        let chunk_size = queries.len().div_ceil(self.config.parallel);
         let mut handles = Vec::new();
 
         for chunk in queries.chunks(chunk_size) {

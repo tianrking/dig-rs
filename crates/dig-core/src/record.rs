@@ -5,10 +5,11 @@
 use serde::{Deserialize, Serialize};
 
 /// DNS record types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(try_from = "String", into = "String")]
 pub enum RecordType {
     // Standard record types (RFC 1035)
+    #[default]
     A,
     NS,
     MD,
@@ -351,12 +352,6 @@ impl RecordType {
                 | RecordType::CDNSKEY
                 | RecordType::DLV
         )
-    }
-}
-
-impl Default for RecordType {
-    fn default() -> Self {
-        RecordType::A
     }
 }
 
