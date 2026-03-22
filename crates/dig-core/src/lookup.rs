@@ -381,9 +381,9 @@ impl DigLookup {
             let mut buf = Vec::with_capacity(65535);
             {
                 let mut encoder = BinEncoder::new(&mut buf);
-                message
-                    .emit(&mut encoder)
-                    .map_err(|e| DigError::ProtocolError(format!("Failed to encode message: {}", e)))?;
+                message.emit(&mut encoder).map_err(|e| {
+                    DigError::ProtocolError(format!("Failed to encode message: {}", e))
+                })?;
             }
 
             // Prepend length
