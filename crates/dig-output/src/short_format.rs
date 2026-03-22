@@ -10,13 +10,13 @@ use crate::format::{OutputConfig, OutputFormatter};
 
 /// Short formatter - only outputs RDATA
 pub struct ShortFormatter {
-    config: OutputConfig,
+    _config: OutputConfig,
 }
 
 impl ShortFormatter {
     /// Create a new short formatter
     pub fn new(config: OutputConfig) -> Self {
-        Self { config }
+        Self { _config: config }
     }
 
     /// Create with default short config

@@ -9,7 +9,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io;
 
 use dig_core::lookup::LookupResult;
 
@@ -48,6 +47,7 @@ pub struct ResponseStatus {
 
 /// Records grouped by type
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(non_snake_case)]
 pub struct RecordsByType {
     /// A records
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -301,7 +301,7 @@ pub struct StructuredFormatter {
     /// Pretty print JSON
     pretty: bool,
     /// Include metadata
-    include_metadata: bool,
+    _include_metadata: bool,
 }
 
 impl StructuredFormatter {
@@ -309,7 +309,7 @@ impl StructuredFormatter {
     pub fn new() -> Self {
         Self {
             pretty: true,
-            include_metadata: true,
+            _include_metadata: true,
         }
     }
 
@@ -317,7 +317,7 @@ impl StructuredFormatter {
     pub fn with_settings(pretty: bool, include_metadata: bool) -> Self {
         Self {
             pretty,
-            include_metadata,
+            _include_metadata: include_metadata,
         }
     }
 

@@ -11,6 +11,8 @@ use hickory_proto::rr::{Name, RData, Record, RecordType as HickoryRecordType};
 use hickory_proto::serialize::binary::{BinDecodable, BinDecoder, BinEncodable, BinEncoder};
 use serde::{Deserialize, Serialize};
 use tokio::net::{TcpStream, UdpSocket};
+#[allow(unused_imports)]
+use tracing::{debug, info};
 
 use crate::config::{DigConfig, QueryClass, Transport};
 use crate::error::{DigError, Result};

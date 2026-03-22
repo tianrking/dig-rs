@@ -11,7 +11,7 @@ use crate::format::{OutputConfig, OutputFormatter};
 
 /// JSON formatter
 pub struct JsonFormatter {
-    config: OutputConfig,
+    _config: OutputConfig,
     pretty: bool,
 }
 
@@ -19,7 +19,7 @@ impl JsonFormatter {
     /// Create a new JSON formatter
     pub fn new(config: OutputConfig) -> Self {
         Self {
-            config,
+            _config: config,
             pretty: true,
         }
     }
