@@ -2,7 +2,7 @@
 //!
 //! Implements iterative DNS resolution from root servers
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use hickory_proto::op::{Message, MessageType, OpCode, Query};
@@ -11,11 +11,11 @@ use hickory_proto::rr::{Name, RecordType as HickoryRecordType};
 use hickory_proto::serialize::binary::{BinDecodable, BinDecoder, BinEncodable, BinEncoder};
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use crate::config::DigConfig;
 use crate::error::{DigError, Result};
-use crate::lookup::{DnsMessage, DnsRecord, LookupResult};
+use crate::lookup::{DnsRecord, LookupResult};
 use crate::record::RecordType;
 
 /// Root server addresses (IPv4)

@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use tokio::runtime::Runtime;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::config::DigConfig;
 use crate::error::{DigError, Result};

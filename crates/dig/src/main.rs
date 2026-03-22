@@ -6,16 +6,15 @@
 //! - Diagnose-first: intelligent DNS health checks
 //! - Cross-platform consistency
 
-use std::net::IpAddr;
 use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
-use tracing::{debug, Level};
+use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
-use dig_core::config::{DigConfig, OutputFormat, QueryClass, ServerConfig, Transport};
+use dig_core::config::{DigConfig, OutputFormat, ServerConfig, Transport};
 use dig_core::diagnostic::{compare_resolvers, DiagnosticConfig, DnsDiagnostic};
 use dig_core::error::DigError;
 use dig_core::lookup::DigLookup;
@@ -239,7 +238,7 @@ fn run(matches: &clap::ArgMatches) -> Result<(), DigError> {
     if matches.contains_id("file") {
         if let Some(file) = matches.get_one::<String>("file") {
             // Build minimal config for batch mode
-            let config = if let Some(args) = matches.get_many::<String>("args") {
+            let config = if let Some(_args) = matches.get_many::<String>("args") {
                 build_config(matches)?
             } else {
                 DigConfig::default()
@@ -512,7 +511,6 @@ fn run_batch(file: &str, base_config: &DigConfig) -> Result<(), DigError> {
                 println!("Time: {}ms", batch_result.exec_time_ms);
 
                 // Format output
-                let config = lookup_result.clone();
                 let output = format_output(&lookup_result, &base_config.output)?;
                 println!("{}", output);
             }

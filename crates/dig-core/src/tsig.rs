@@ -4,11 +4,10 @@
 //! as specified in RFC 2845.
 
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
 use thiserror::Error;
 use tracing::{debug, warn};
 
-use crate::error::{DigError, Result};
+use crate::error::Result;
 
 /// TSIG authentication errors
 #[derive(Debug, Error)]
@@ -235,8 +234,8 @@ impl TsigSigner {
     }
 
     /// Sign a DNS message
-    pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
-        let key_bytes = self.key.key_bytes()?;
+    pub fn sign(&self, _message: &[u8]) -> Result<Vec<u8>> {
+        let _key_bytes = self.key.key_bytes()?;
 
         // This is a placeholder for the actual HMAC implementation
         // In a production environment, you would use a proper crypto library

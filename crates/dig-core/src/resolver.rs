@@ -2,7 +2,7 @@
 //!
 //! Cross-platform resolver configuration reading
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::time::Duration;
 

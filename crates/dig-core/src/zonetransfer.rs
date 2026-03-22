@@ -5,15 +5,14 @@
 
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::{debug, info, warn};
 
 use crate::config::{DigConfig, Transport};
 use crate::error::{DigError, Result};
-use crate::lookup::{DigLookup, DnsRecord};
-use crate::record::RecordType;
+use crate::lookup::DnsRecord;
 
 /// Zone transfer type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

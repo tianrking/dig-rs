@@ -1,6 +1,6 @@
 //! Output format traits and types
 
-use std::io::{self, Write};
+use std::io;
 
 use dig_core::lookup::LookupResult;
 

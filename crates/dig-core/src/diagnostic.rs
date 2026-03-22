@@ -4,13 +4,12 @@
 //! simple lookups to identify and explain DNS issues.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
+use std::collections::HashSet;
+use std::time::Instant;
 
 use crate::config::DigConfig;
-use crate::error::{DigError, Result};
+use crate::error::Result;
 use crate::lookup::{DigLookup, LookupResult};
-use crate::metrics::QueryMetrics;
 
 /// Health check result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,10 +291,10 @@ impl DnsDiagnostic {
         let mut issues = Vec::new();
         let mut recommendations = Vec::new();
 
-        let result = lookup.lookup().await;
+        let _result = lookup.lookup().await;
         let latency = start.elapsed().as_millis() as u64;
 
-        let (status, status_text) = if latency <= self.config.latency_thresholds.fast {
+        let (status, _status_text) = if latency <= self.config.latency_thresholds.fast {
             (CheckStatus::Pass, "Fast")
         } else if latency <= self.config.latency_thresholds.acceptable {
             (CheckStatus::Pass, "Acceptable")
@@ -407,8 +406,8 @@ impl DnsDiagnostic {
 
     /// Check DNS security
     async fn check_security(&self, domain: &str) -> Result<CheckWithIssues> {
-        let mut issues = Vec::new();
-        let mut recommendations = Vec::new();
+        let issues = Vec::new();
+        let recommendations = Vec::new();
 
         // Check for DNSSEC
         let config = DigConfig::new(domain).with_dnssec(true);
