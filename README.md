@@ -1,302 +1,235 @@
 # dig-rs
 
-[![CI](https://github.com/dig-rs/dig-rs/workflows/CI/badge.svg)](https://github.com/dig-rs/dig-rs/actions)
-[![Crates.io](https://img.shields.io/crates/v/dig-rs)](https://crates.io/crates/dig-rs)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
-[![Security Audit](https://github.com/dig-rs/dig-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/dig-rs/dig-rs/actions)
+`dig-rs` is a modern, cross-platform DNS inspection tool written in Rust.
 
-**dig-rs** is a modern, cross-platform DNS lookup utility written in Rust. It reimagines the classic BIND9 `dig` tool with a focus on performance, security, and user experience.
+It is designed for both:
+- interactive terminal usage (human-friendly),
+- and agent/automation workflows (machine-friendly).
 
-## Features
+## Why dig-rs
 
-- **Comprehensive DNS Support**: All major DNS record types including DNSSEC
-- **Multiple Transports**: UDP, TCP, DNS-over-TLS (DoT), DNS-over-HTTPS (DoH)
-- **Modern Output Formats**: Classic dig, JSON, YAML, Table, Short, and more
-- **Cross-Platform**: Native support for Linux, macOS, and Windows
-- **High Performance**: Built on Tokio async runtime for optimal performance
-- **DNSSEC**: Full DNSSEC validation and support
-- **Batch Processing**: Process multiple queries from a file
-- **Flexible Configuration**: Extensive CLI options matching BIND9 dig
+- Cross-platform first: Linux, macOS, Windows parity.
+- Safer implementation: Rust memory safety.
+- Structured output: JSON-first automation support.
+- Multi-mode diagnostics: query, health, compare, trace, batch.
+- Versioned machine envelope for compare/trace JSON (`schema_version`).
+- Backward compatibility: supports legacy dig-style positional usage.
 
 ## Installation
-
-### Cargo
 
 ```bash
 cargo install dig-rs
 ```
 
-### Pre-built Binaries
+Or download binaries from GitHub Releases.
 
-Download the latest release from [GitHub Releases](https://github.com/dig-rs/dig-rs/releases).
+## Command Model
 
-### Homebrew (macOS/Linux)
+`dig-rs` supports two invocation styles.
 
-```bash
-brew install dig-rs
-```
-
-### From Source
+### 1) Subcommand style (recommended)
 
 ```bash
-git clone https://github.com/dig-rs/dig-rs.git
-cd dig-rs
-cargo install --path .
+dig-rs query @8.8.8.8 example.com A --json
+dig-rs health example.com --json
+dig-rs compare example.com A --resolvers system google cloudflare
+dig-rs compare example.com A --resolvers google cloudflare --json --allow-inconsistent
+dig-rs trace example.com
+dig-rs trace example.com --json --output-file trace.json
+dig-rs batch --file queries.txt
 ```
 
-## Quick Start
-
-### Basic Usage
+### 2) Legacy compatible style
 
 ```bash
-# Simple A record lookup
-dig example.com
-
-# Lookup specific record type
-dig example.com MX
-
-# Query a specific DNS server
-dig @8.8.8.8 example.com
-
-# Reverse DNS lookup
-dig -x 8.8.8.8
-
-# DNS trace from root servers
-dig +trace example.com
-
-# Short output
-dig example.com +short
-
-# JSON output
-dig example.com +json
+dig-rs @8.8.8.8 example.com A --short
+dig-rs example.com --health
+dig-rs example.com --compare system google cloudflare
+dig-rs example.com --trace --json
+dig-rs --file queries.txt
 ```
 
-### Advanced Usage
+## Subcommands
+
+### `query`
+
+Run standard DNS query.
 
 ```bash
-# DNS-over-TLS
-dig @1.1.1.1 example.com +tls
-
-# DNS-over-HTTPS
-dig @1.1.1.1 example.com +https
-
-# DNSSEC validation
-dig example.com +dnssec
-
-# Batch mode
-dig -f queries.txt
-
-# EDNS options
-dig example.com +edns=0 +bufsize=4096
-
-# TSIG authentication
-dig -k tsig.key example.com AXFR
+dig-rs query [@SERVER] NAME [TYPE] [OPTIONS]
 ```
 
-## Output Formats
+Examples:
 
-dig-rs supports multiple output formats:
+```bash
+dig-rs query example.com
+dig-rs query @1.1.1.1 example.com AAAA
+dig-rs query example.com MX --short
+dig-rs query example.com A --json
+```
 
-| Format | Flag | Description |
-|--------|------|-------------|
-| Classic dig | `+dig` | BIND9 compatible output (default) |
-| JSON | `+json` | Machine-readable JSON |
-| YAML | `+yaml` | Human-readable YAML |
-| Table | `+table` | Formatted table view |
-| Short | `+short` | Only the answer data |
-| XML | `+xml` | XML format |
+### `health`
 
-## CLI Options
+Run DNS health diagnostics.
 
-### Basic Options
+```bash
+dig-rs health NAME [--json]
+```
 
-| Option | Description |
-|--------|-------------|
-| `-4` / `-6` | Force IPv4/IPv6 transport |
-| `-b address` | Bind to source address |
-| `-c class` | Set query class (IN, CH, HS) |
-| `-f file` | Read queries from file |
-| `-p port` | Set port number |
-| `-q name` | Specify query name |
-| `-t type` | Specify query type |
-| `-x addr` | Reverse lookup |
-| `-k file` | TSIG key file |
+Examples:
 
-### Query Flags
+```bash
+dig-rs health example.com
+dig-rs health example.com --json
+```
 
-| Flag | Description |
-|------|-------------|
-| `+tcp` / `+notcp` | Use TCP instead of UDP |
-| `+tls` / `+notls` | Use DNS-over-TLS |
-| `+https` / `+nohttps` | Use DNS-over-HTTPS |
-| `+short` / `+noshort` | Short output format |
-| `+json` / `+nojson` | JSON output format |
-| `+yaml` / `+noyaml` | YAML output format |
-| `+trace` / `+notrace` | Trace delegation path |
-| `+dnssec` / `+nodnssec` | Enable DNSSEC |
-| `+recurse` / `+norecurse` | Set recursion desired flag |
-| `+adflag` / `+noadflag` | Set authentic data flag |
-| `+cdflag` / `+nocdflag` | Set checking disabled flag |
+### `compare`
 
-### Display Options
+Compare consistency and latency across resolvers.
 
-| Flag | Description |
-|------|-------------|
-| `+comments` / `+nocomments` | Display comments |
-| `+question` / `+noquestion` | Show question section |
-| `+answer` / `+noanswer` | Show answer section |
-| `+authority` / `+noauthority` | Show authority section |
-| `+additional` / `+noadditional` | Show additional section |
-| `+stats` / `+nostats` | Display statistics |
-| `+ttlid` / `+nottlid` | Display TTL |
-| `+class` / `+noclass` | Display class |
+```bash
+dig-rs compare NAME [TYPE] --resolvers RESOLVER...
+```
 
-### EDNS Options
+Resolver aliases:
+- `system` (current OS resolver),
+- `google` (`8.8.8.8`),
+- `cloudflare` (`1.1.1.1`),
+- `opendns` (`208.67.222.222`),
+- `quad9` (`9.9.9.9`).
 
-| Flag | Description |
-|------|-------------|
-| `+edns[=#]` | Set EDNS version |
-| `+noedns` | Disable EDNS |
-| `+bufsize=B` | Set UDP buffer size |
-| `+nsid` / `+nonsid` | Request name server ID |
-| `+cookie[=#]` | Send DNS COOKIE |
+Examples:
 
-### Timing and Retry Options
+```bash
+dig-rs compare example.com A --resolvers system google cloudflare
+dig-rs compare example.com AAAA --resolvers 8.8.8.8 1.1.1.1 9.9.9.9
+dig-rs compare example.com A --resolvers google cloudflare --json --allow-inconsistent
+```
 
-| Flag | Description |
-|------|-------------|
-| `+timeout=T` | Set query timeout (seconds) |
-| `+retry=T` | Set retry count |
-| `+tries=T` | Set total tries |
+### `trace`
 
-## Record Types Supported
+Trace DNS delegation from root to final answer.
 
-dig-rs supports all major DNS record types:
+```bash
+dig-rs trace [@SERVER] NAME [TYPE] [OPTIONS]
+```
 
-- **Standard**: A, AAAA, NS, CNAME, SOA, MX, TXT, PTR, SRV
-- **DNSSEC**: DNSKEY, DS, RRSIG, NSEC, NSEC3, NSEC3PARAM
-- **Security**: TLSA, CAA, SSHFP, IPSECKEY
-- **Modern**: SVCB, HTTPS, OPENPGPKEY
-- **Zone Transfer**: AXFR, IXFR
-- **And 60+ more types**
+Examples:
+
+```bash
+dig-rs trace example.com
+dig-rs trace @8.8.8.8 example.com A
+dig-rs trace example.com --json --output-file trace.json
+```
+
+### `batch`
+
+Run queries from file.
+
+```bash
+dig-rs batch --file FILE [OPTIONS]
+```
+
+Example:
+
+```bash
+dig-rs batch --file queries.txt --json
+```
+
+## Common Options
+
+Most query-like modes support:
+
+- `-J, --json` structured output.
+- `--short` short output.
+- `--table` table output.
+- `-c, --class IN|CH|HS`.
+- `-p, --port PORT`.
+- `-x, --reverse IP`.
+- `-4, --ipv4` / `-6, --ipv6`.
+- `--tcp` / `--dot` / `--doh`.
+- `--dnssec`.
+- `--norecurse`.
+- `--timeout SECONDS`.
+- `--retries COUNT`.
+- `--output-file FILE` write output to file (while still printing stdout).
+- `--no-comments`.
+- `--no-stats`.
+- `-v, --verbose`.
+- `-d, --debug`.
+
+Compare-specific:
+- `--allow-inconsistent` keeps exit code `0` even if compare finds resolver inconsistency.
+
+## JSON Contracts
+
+`compare --json` and `trace --json` output a versioned envelope:
+
+```json
+{
+  "schema_version": "dig-rs/v1",
+  "mode": "compare or trace",
+  "generated_at_unix_ms": 1774233148357,
+  "data": { "...mode specific payload..." }
+}
+```
+
+This is designed for long-term agent compatibility and explicit schema evolution.
+
+## AI/Agent-Friendly Usage
+
+`dig-rs` is intentionally designed for LLM/agent pipelines:
+
+- Prefer deterministic command shapes (`query`, `health`, `compare`, `trace`, `batch`).
+- Prefer `--json` for machine parsing and downstream automation.
+- Use resolver aliases in scripts (`system`, `google`, `cloudflare`, etc.).
+- Keep output mode explicit in prompts or tools.
+- Persist artifacts with `--output-file`.
+- Use `--allow-inconsistent` when you want compare output but do not want hard-fail behavior.
+
+Recommended patterns:
+
+```bash
+# Parse-ready query
+dig-rs query example.com A --json
+
+# Programmatic health check
+dig-rs health example.com --json
+
+# Consistency verification before production rollout
+dig-rs compare api.example.com A --resolvers system google cloudflare
+
+# Artifact-friendly compare output
+dig-rs compare api.example.com A --resolvers system google cloudflare --json --allow-inconsistent --output-file compare.json
+```
 
 ## Architecture
 
-dig-rs is organized as a workspace with three crates:
+See:
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md)
+- [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md)
+- [docs/JSON_SCHEMA.md](docs/JSON_SCHEMA.md)
 
-```
+Workspace crates:
+
+```text
 dig-rs/
-├── dig/           # CLI binary
-├── dig-core/      # Core DNS library
-└── dig-output/    # Output formatting
+|- crates/dig         # CLI
+|- crates/dig-core    # DNS logic
+`- crates/dig-output  # formatters
 ```
-
-### dig-core
-
-The core DNS library providing:
-- DNS protocol implementation
-- Query execution
-- Record type definitions
-- Transport layer abstraction
-- Configuration management
-
-### dig-output
-
-Output formatting library with:
-- Multiple format implementations
-- Formatter trait for extensibility
-- Colorized terminal output
-- Machine-readable formats
 
 ## Development
 
-### Building
-
 ```bash
-cargo build --release
+cargo fmt --all
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
 ```
-
-### Testing
-
-```bash
-# Run all tests
-cargo test
-
-# Run with coverage
-cargo tarpaulin --all-features
-
-# Run benchmarks
-cargo bench
-```
-
-### Linting
-
-```bash
-# Format code
-cargo fmt
-
-# Run clippy
-cargo clippy --all-targets --all-features
-```
-
-## Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```bash
-# Fork and clone the repository
-git clone https://github.com/your-username/dig-rs.git
-cd dig-rs
-
-# Install development dependencies
-cargo install cargo-watch cargo-tarpaulin cargo-audit
-
-# Run development server with hot reload
-cargo watch -x test
-```
-
-## Security
-
-Please report security vulnerabilities responsibly. See [SECURITY.md](SECURITY.md) for details.
-
-## Performance
-
-dig-rs is optimized for performance:
-
-- Async I/O with Tokio
-- Zero-copy parsing where possible
-- Efficient memory usage
-- Parallel query execution for batch mode
-
-Benchmarks show dig-rs is competitive with BIND9 dig while providing better cross-platform support.
-
-## Comparison with BIND9 dig
-
-| Feature | dig-rs | BIND9 dig |
-|---------|--------|-----------|
-| Cross-platform | ✅ Native | ✅ Native |
-| Modern output formats | ✅ JSON/YAML | ❌ |
-| Memory safety | ✅ Rust guarantees | ❌ C |
-| Async I/O | ✅ Tokio | ❌ |
-| Easy installation | ✅ One command | ❌ Complex |
-| Active development | ✅ | ⚠️ Slow |
 
 ## License
 
-Licensed under either of:
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-## Acknowledgments
-
-- Built on [hickory-dns](https://github.com/hickory-dns/hickory-dns)
-- Inspired by [BIND9](https://www.isc.org/bind/)
-
-## Contact
-
-- **Author**: tianrking <tian.r.king@gmail.com>
-- **Issues**: [GitHub Issues](https://github.com/dig-rs/dig-rs/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/dig-rs/dig-rs/discussions)
+Dual-licensed:
+- MIT
+- Apache-2.0

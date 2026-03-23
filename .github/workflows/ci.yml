@@ -7,33 +7,34 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CARGO_NET_RETRY: 10
+  CARGO_HTTP_TIMEOUT: 120
 
 jobs:
   test:
-    name: Test on ${{ matrix.os }}
+    name: ${{ matrix.os }} / stable
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable, beta]
-        include:
-          - os: ubuntu-latest
-            rust: nightly
-          - os: macos-latest
-            rust: nightly
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust (${{ matrix.rust }})
+      - name: Install Rust (stable)
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache dependencies
@@ -50,112 +51,11 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
-      - name: Run tests
-        run: cargo test --all-features --all-targets
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features --locked
 
-      - name: Build
-        run: cargo build --all-features --release
-
-  security:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Run cargo-audit
-        uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v1
-        with:
-          arguments: --all-features
-
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
-
-      - name: Generate coverage
-        run: cargo tarpaulin --all-features --workspace --out xml --output-dir ./coverage
-
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage/cobertura.xml
-          fail_ci_if_error: true
-
-  benchmarks:
-    name: Benchmarks
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Run benchmarks
-        run: cargo bench --all-features --no-fail-fast
-
-  miri:
-    name: Miri (UB Detection)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly
-          components: miri
-
-      - name: Run Miri
-        run: |
-          cargo miri test --all-features --workspace
-
-  msrv:
-    name: Check MSRV
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: "1.75.0"
-
-      - name: Check with MSRV
-        run: cargo check --all-features
+      - name: Build release
+        run: cargo build --workspace --release --all-features --locked

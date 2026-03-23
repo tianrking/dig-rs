@@ -1,15 +1,13 @@
-//! dig-rs - A modern, cross-platform DNS inspection tool
+//! dig-rs - A modern, cross-platform DNS inspection tool.
 //!
-//! Core differentiators:
-//! - JSON-first output for automation
-//! - Compare-first: multi-resolver comparison
-//! - Diagnose-first: intelligent DNS health checks
-//! - Cross-platform consistency
+//! This binary supports two invocation styles:
+//! 1) New subcommand style: `dig-rs query|health|compare|trace|batch ...`
+//! 2) Legacy dig-compatible style: `dig-rs [@SERVER] NAME [TYPE] [OPTIONS]`
 
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
@@ -18,34 +16,21 @@ use dig_core::config::{DigConfig, OutputFormat, ServerConfig, Transport};
 use dig_core::diagnostic::{compare_resolvers, DiagnosticConfig, DnsDiagnostic};
 use dig_core::error::DigError;
 use dig_core::lookup::DigLookup;
+use dig_core::resolver::ResolverConfig;
 use dig_core::trace::DnsTrace;
 use dig_output::{
     DigFormatter, JsonFormatter, OutputFormatter, ShortFormatter, StructuredFormatter,
     TableFormatter,
 };
 
-/// Program version
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const SCHEMA_VERSION: &str = "dig-rs/v1";
 
 fn main() -> ExitCode {
     let matches = build_cli().get_matches();
 
-    // Initialize logging
-    if matches.get_flag("debug") {
-        let subscriber = FmtSubscriber::builder()
-            .with_max_level(Level::DEBUG)
-            .finish();
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("Failed to set tracing subscriber");
-    } else if matches.get_flag("verbose") {
-        let subscriber = FmtSubscriber::builder()
-            .with_max_level(Level::INFO)
-            .finish();
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("Failed to set tracing subscriber");
-    }
+    init_logging(&matches);
 
-    // Run the main logic
     match run(&matches) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -55,222 +40,450 @@ fn main() -> ExitCode {
     }
 }
 
-/// Build the CLI command with modern, focused interface
+fn init_logging(matches: &ArgMatches) {
+    let level = if matches.get_flag("debug") {
+        Some(Level::DEBUG)
+    } else if matches.get_flag("verbose") {
+        Some(Level::INFO)
+    } else {
+        None
+    };
+
+    if let Some(max_level) = level {
+        let subscriber = FmtSubscriber::builder().with_max_level(max_level).finish();
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("Failed to set tracing subscriber");
+    }
+}
+
 fn build_cli() -> Command {
-    Command::new("dig-rs")
-        .about("A modern, cross-platform DNS inspection tool")
-        .version(VERSION)
-        .author("tianrking <tian.r.king@gmail.com>")
-        .long_about(
-            "dig-rs is a structured DNS inspection tool with built-in diagnostics.\n\
-             \n\
-             Core differentiators:\n\
-             • JSON-first: Machine-readable output for automation\n\
-             • Compare-first: Multi-resolver comparison in one command\n\
-             • Diagnose-first: Intelligent DNS health analysis\n\
-             • Cross-platform: Consistent on Linux, macOS, Windows\n\
-             \n\
-             Examples:\n\
-               dig-rs example.com                    -- Basic query\n\
-               dig-rs example.com --json             -- Structured JSON output\n\
-               dig-rs example.com --health           -- Health check with diagnostics\n\
-               dig-rs example.com --compare 8.8.8.8 1.1.1.1  -- Compare resolvers"
+    let legacy = add_common_query_options(
+        Command::new("dig-rs")
+            .about("A modern, cross-platform DNS inspection tool")
+            .version(VERSION)
+            .author("tianrking <tian.r.king@gmail.com>")
+            .long_about(
+                "dig-rs is a structured DNS inspection tool with built-in diagnostics.\n\
+                 \n\
+                 Invocation styles:\n\
+                 - Subcommands: query, health, compare, trace, batch\n\
+                 - Legacy compatible: dig-rs [@SERVER] NAME [TYPE] [OPTIONS]\n\
+                 \n\
+                 Examples:\n\
+                   dig-rs query @8.8.8.8 example.com A --json\n\
+                   dig-rs health example.com --json\n\
+                   dig-rs compare example.com A --resolvers system google cloudflare\n\
+                   dig-rs trace example.com\n\
+                   dig-rs batch --file queries.txt\n\
+                   dig-rs @1.1.1.1 example.com AAAA --short",
+            )
+            .arg(
+                Arg::new("legacy_args")
+                    .help("Legacy args: [@SERVER] [NAME] [TYPE]")
+                    .value_name("ARGS")
+                    .num_args(1..),
+            )
+            .arg(
+                Arg::new("health")
+                    .long("health")
+                    .help("Run DNS health check (legacy mode)")
+                    .action(ArgAction::SetTrue),
+            )
+            .arg(
+                Arg::new("compare")
+                    .long("compare")
+                    .help("Compare result across resolvers (legacy mode)")
+                    .value_name("RESOLVERS")
+                    .num_args(1..),
+            )
+            .arg(
+                Arg::new("allow-inconsistent")
+                    .long("allow-inconsistent")
+                    .help("Do not return non-zero exit code for legacy --compare inconsistencies")
+                    .action(ArgAction::SetTrue),
+            )
+            .arg(
+                Arg::new("file")
+                    .short('f')
+                    .long("file")
+                    .help("Read queries from file (legacy batch mode)")
+                    .value_name("FILE"),
+            ),
+    )
+    .arg(
+        Arg::new("verbose")
+            .short('v')
+            .long("verbose")
+            .global(true)
+            .help("Verbose output")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("debug")
+            .short('d')
+            .long("debug")
+            .global(true)
+            .help("Debug output")
+            .action(ArgAction::SetTrue),
+    );
+
+    legacy
+        .subcommand(build_query_subcommand())
+        .subcommand(build_health_subcommand())
+        .subcommand(build_compare_subcommand())
+        .subcommand(build_trace_subcommand())
+        .subcommand(build_batch_subcommand())
+}
+
+fn build_query_subcommand() -> Command {
+    add_common_query_options(
+        Command::new("query").about("Run a standard DNS query").arg(
+            Arg::new("args")
+                .help("Arguments: [@SERVER] [NAME] [TYPE]")
+                .value_name("ARGS")
+                .num_args(1..),
+        ),
+    )
+}
+
+fn build_health_subcommand() -> Command {
+    Command::new("health")
+        .about("Run DNS health diagnostics for a domain")
+        .arg(
+            Arg::new("name")
+                .help("Domain to diagnose")
+                .value_name("NAME")
+                .required(true),
         )
-        // Positional arguments (dig-compatible)
-        // We collect all remaining arguments and parse them manually
-        // to handle the @server, name, and type in any order
-        .arg(Arg::new("args")
-            .help("Arguments: [@SERVER] [NAME] [TYPE]")
-            .value_name("ARGS")
-            .num_args(1..))
-        // ===== CORE DIFFERENTIATORS =====
-        .arg(Arg::new("json")
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .short('J')
+                .help("Output health report as JSON")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("output-file")
+                .long("output-file")
+                .help("Write output to file as well")
+                .value_name("FILE"),
+        )
+}
+
+fn build_compare_subcommand() -> Command {
+    Command::new("compare")
+        .about("Compare query results across multiple resolvers")
+        .arg(
+            Arg::new("name")
+                .help("Domain to query")
+                .value_name("NAME")
+                .required(true),
+        )
+        .arg(
+            Arg::new("type")
+                .help("Record type (A, AAAA, MX, TXT, ...)")
+                .value_name("TYPE")
+                .required(false),
+        )
+        .arg(
+            Arg::new("resolvers")
+                .long("resolvers")
+                .help("Resolver list: IPs or aliases(system/google/cloudflare/opendns/quad9)")
+                .value_name("RESOLVERS")
+                .num_args(1..)
+                .required(true),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .short('J')
+                .help("Output comparison report as structured JSON")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("allow-inconsistent")
+                .long("allow-inconsistent")
+                .help("Do not return non-zero exit code when resolvers are inconsistent")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("output-file")
+                .long("output-file")
+                .help("Write output to file as well")
+                .value_name("FILE"),
+        )
+}
+
+fn build_trace_subcommand() -> Command {
+    add_common_query_options(
+        Command::new("trace")
+            .about("Trace DNS delegation from root to authoritative answer")
+            .arg(
+                Arg::new("args")
+                    .help("Arguments: [@SERVER] [NAME] [TYPE]")
+                    .value_name("ARGS")
+                    .num_args(1..),
+            ),
+    )
+}
+
+fn build_batch_subcommand() -> Command {
+    add_common_query_options(
+        Command::new("batch")
+            .about("Run batch queries from a file")
+            .arg(
+                Arg::new("file")
+                    .short('f')
+                    .long("file")
+                    .help("Path to batch query file")
+                    .value_name("FILE")
+                    .required(true),
+            )
+            .arg(
+                Arg::new("args")
+                    .help("Optional defaults: [@SERVER] [TYPE]")
+                    .value_name("ARGS")
+                    .num_args(0..),
+            ),
+    )
+}
+
+fn add_common_query_options(cmd: Command) -> Command {
+    cmd.arg(
+        Arg::new("json")
             .long("json")
             .short('J')
-            .help("Structured JSON output (machine-readable)")
-            .action(ArgAction::SetTrue)
-            .long_help(
-                "Output in structured JSON format designed for automation and API integration.\n\
-                 \n\
-                 Schema includes:\n\
-                 • HTTP-style status codes (200, 404, 500)\n\
-                 • Records grouped by type\n\
-                 • Performance metrics (latency, size)\n\
-                 • Resolver information\n\
-                 • DNS flags and metadata"
-            ))
-        .arg(Arg::new("health")
-            .long("health")
-            .short('H')
-            .help("Run DNS health check with diagnostics")
-            .action(ArgAction::SetTrue)
-            .long_help(
-                "Perform comprehensive DNS health analysis:\n\
-                 • Resolution check\n\
-                 • Performance analysis\n\
-                 • Consistency across resolvers\n\
-                 • Security (DNSSEC) check\n\
-                 • CDN detection\n\
-                 • Actionable recommendations"
-            ))
-        .arg(Arg::new("compare")
-            .long("compare")
-            .short('C')
-            .help("Compare results across multiple resolvers")
-            .value_name("RESOLVERS")
-            .value_delimiter(' ')
-            .num_args(1..)
-            .long_help(
-                "Query the same domain from multiple resolvers and compare results.\n\
-                 \n\
-                 Resolvers can be:\n\
-                 • IP addresses: 8.8.8.8 1.1.1.1\n\
-                 • 'system' to use system resolver\n\
-                 • 'google' 'cloudflare' 'opendns' for presets\n\
-                 \n\
-                 Detects inconsistencies, latency differences, and failures."
-            ))
-        // ===== QUERY OPTIONS =====
-        .arg(Arg::new("class")
+            .help("Structured JSON output")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("class")
             .short('c')
             .long("class")
             .help("Query class (IN, CH, HS)")
             .value_name("CLASS")
-            .default_value("IN"))
-        .arg(Arg::new("port")
+            .default_value("IN"),
+    )
+    .arg(
+        Arg::new("port")
             .short('p')
             .long("port")
             .help("Query port")
             .value_name("PORT")
-            .default_value("53"))
-        .arg(Arg::new("reverse")
+            .default_value("53"),
+    )
+    .arg(
+        Arg::new("reverse")
             .short('x')
             .long("reverse")
             .help("Reverse lookup (PTR)")
-            .value_name("IP"))
-        // ===== TRANSPORT OPTIONS =====
-        .arg(Arg::new("ipv4")
+            .value_name("IP"),
+    )
+    .arg(
+        Arg::new("ipv4")
             .short('4')
             .long("ipv4")
             .help("Use IPv4 only")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("ipv6")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("ipv6")
             .short('6')
             .long("ipv6")
             .help("Use IPv6 only")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("tcp")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("tcp")
             .long("tcp")
-            .help("Use TCP")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("dot")
+            .help("Use TCP transport")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("dot")
             .long("dot")
-            .help("DNS-over-TLS")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("doh")
+            .help("Use DNS-over-TLS")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("doh")
             .long("doh")
-            .short('H')
-            .help("DNS-over-HTTPS")
-            .action(ArgAction::SetTrue))
-        // ===== OUTPUT OPTIONS =====
-        .arg(Arg::new("short")
+            .help("Use DNS-over-HTTPS")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("short")
             .long("short")
             .help("Short output (answers only)")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("table")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("table")
             .long("table")
-            .help("Table format")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("no-comments")
+            .help("Table output")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("no-comments")
             .long("no-comments")
-            .help("Hide comments")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("no-stats")
+            .help("Hide comments in standard output")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("no-stats")
             .long("no-stats")
-            .help("Hide statistics")
-            .action(ArgAction::SetTrue))
-        // ===== DNS OPTIONS =====
-        .arg(Arg::new("trace")
+            .help("Hide stats in standard output")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("trace")
             .long("trace")
-            .help("Trace delegation from root")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("dnssec")
+            .help("Enable trace mode (legacy style)")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("dnssec")
             .long("dnssec")
             .help("Request DNSSEC records")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("norecurse")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("norecurse")
             .long("norecurse")
             .help("Disable recursion")
-            .action(ArgAction::SetTrue))
-        // ===== TIMING OPTIONS =====
-        .arg(Arg::new("timeout")
+            .action(ArgAction::SetTrue),
+    )
+    .arg(
+        Arg::new("timeout")
             .long("timeout")
             .help("Query timeout in seconds")
             .value_name("SECONDS")
-            .default_value("5"))
-        .arg(Arg::new("retries")
+            .default_value("5"),
+    )
+    .arg(
+        Arg::new("retries")
             .long("retries")
             .help("Number of retries")
             .value_name("COUNT")
-            .default_value("3"))
-        // ===== BATCH MODE =====
-        .arg(Arg::new("file")
-            .short('f')
-            .long("file")
-            .help("Read queries from file (batch mode)")
-            .value_name("FILE"))
-        // ===== DEBUG OPTIONS =====
-        .arg(Arg::new("verbose")
-            .short('v')
-            .long("verbose")
-            .help("Verbose output")
-            .action(ArgAction::SetTrue))
-        .arg(Arg::new("debug")
-            .short('d')
-            .long("debug")
-            .help("Debug output")
-            .action(ArgAction::SetTrue))
+            .default_value("3"),
+    )
+    .arg(
+        Arg::new("output-file")
+            .long("output-file")
+            .help("Write output to file as well")
+            .value_name("FILE"),
+    )
 }
 
-/// Main program logic
-fn run(matches: &clap::ArgMatches) -> Result<(), DigError> {
-    // Check for batch mode first (doesn't require args)
-    if matches.contains_id("file") {
-        if let Some(file) = matches.get_one::<String>("file") {
-            // Build minimal config for batch mode
-            let config = if let Some(_args) = matches.get_many::<String>("args") {
-                build_config(matches)?
-            } else {
-                DigConfig::default()
-            };
-            return run_batch(file, &config);
-        }
+fn run(matches: &ArgMatches) -> Result<(), DigError> {
+    match matches.subcommand() {
+        Some(("query", sub)) => run_query_mode(sub, "args"),
+        Some(("health", sub)) => run_health_subcommand(sub),
+        Some(("compare", sub)) => run_compare_subcommand(sub),
+        Some(("trace", sub)) => run_trace_subcommand(sub),
+        Some(("batch", sub)) => run_batch_subcommand(sub),
+        _ => run_legacy_mode(matches),
     }
+}
 
-    // Build configuration for other modes
-    let config = build_config(matches)?;
+fn run_query_mode(matches: &ArgMatches, args_key: &str) -> Result<(), DigError> {
+    let config = build_config(matches, args_key, true)?;
+    let output_file = matches.get_one::<String>("output-file");
 
-    // Health check mode
-    if matches.get_flag("health") {
-        return run_health_check(&config, matches);
-    }
-
-    // Compare mode
-    if let Some(resolvers) = matches.get_many::<String>("compare") {
-        return run_compare(&config, resolvers);
-    }
-
-    // Trace mode
     if config.trace {
-        return run_trace(config);
+        return run_trace(config, output_file);
     }
 
-    // Standard query mode
-    run_standard_query(config)
+    run_standard_query(config, output_file)
 }
 
-/// Run health check
-fn run_health_check(config: &DigConfig, matches: &clap::ArgMatches) -> Result<(), DigError> {
+fn run_health_subcommand(matches: &ArgMatches) -> Result<(), DigError> {
+    let name = matches
+        .get_one::<String>("name")
+        .ok_or_else(|| DigError::ConfigError("Domain name is required".into()))?;
+    let mut config = DigConfig::new(name.clone());
+    config.output.format = if matches.get_flag("json") {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Standard
+    };
+    run_health_check(
+        &config,
+        matches.get_flag("json"),
+        matches.get_one::<String>("output-file"),
+    )
+}
+
+fn run_compare_subcommand(matches: &ArgMatches) -> Result<(), DigError> {
+    let name = matches
+        .get_one::<String>("name")
+        .ok_or_else(|| DigError::ConfigError("Domain name is required".into()))?;
+    let query_type = matches
+        .get_one::<String>("type")
+        .cloned()
+        .unwrap_or_else(|| "A".to_string());
+    let resolvers = matches
+        .get_many::<String>("resolvers")
+        .ok_or_else(|| DigError::ConfigError("At least one resolver is required".into()))?;
+
+    let config = DigConfig::new(name.clone()).with_query_type(query_type);
+    run_compare(
+        &config,
+        resolvers,
+        matches.get_flag("json"),
+        matches.get_flag("allow-inconsistent"),
+        matches.get_one::<String>("output-file"),
+    )
+}
+
+fn run_trace_subcommand(matches: &ArgMatches) -> Result<(), DigError> {
+    let mut config = build_config(matches, "args", true)?;
+    config.trace = true;
+    run_trace(config, matches.get_one::<String>("output-file"))
+}
+
+fn run_batch_subcommand(matches: &ArgMatches) -> Result<(), DigError> {
+    let file = matches
+        .get_one::<String>("file")
+        .ok_or_else(|| DigError::ConfigError("Batch file is required".into()))?;
+    let base_config = build_config(matches, "args", false)?;
+    run_batch(file, &base_config)
+}
+
+fn run_legacy_mode(matches: &ArgMatches) -> Result<(), DigError> {
+    if let Some(file) = matches.get_one::<String>("file") {
+        let config = build_config(matches, "legacy_args", false)?;
+        return run_batch(file, &config);
+    }
+
+    if matches.get_flag("health") {
+        let config = build_config(matches, "legacy_args", true)?;
+        return run_health_check(
+            &config,
+            matches.get_flag("json"),
+            matches.get_one::<String>("output-file"),
+        );
+    }
+
+    if let Some(resolvers) = matches.get_many::<String>("compare") {
+        let config = build_config(matches, "legacy_args", true)?;
+        return run_compare(
+            &config,
+            resolvers,
+            matches.get_flag("json"),
+            matches.get_flag("allow-inconsistent"),
+            matches.get_one::<String>("output-file"),
+        );
+    }
+
+    run_query_mode(matches, "legacy_args")
+}
+
+fn run_health_check(
+    config: &DigConfig,
+    as_json: bool,
+    output_file: Option<&String>,
+) -> Result<(), DigError> {
     let diag_config = DiagnosticConfig::default();
     let diagnostic = DnsDiagnostic::new(diag_config);
 
@@ -279,16 +492,15 @@ fn run_health_check(config: &DigConfig, matches: &clap::ArgMatches) -> Result<()
 
     let health = rt.block_on(diagnostic.health_check(&config.name))?;
 
-    // Output based on format preference
-    if matches.get_flag("json") {
+    if as_json {
         let json = serde_json::to_string_pretty(&health)
             .map_err(|e| DigError::QueryFailed(e.to_string()))?;
+        write_output(output_file, &json)?;
         println!("{}", json);
     } else {
         print_health_report(&health);
     }
 
-    // Exit with error code if not healthy
     match health.status {
         dig_core::diagnostic::HealthStatus::Healthy => Ok(()),
         dig_core::diagnostic::HealthStatus::Warning => Ok(()),
@@ -301,17 +513,16 @@ fn run_health_check(config: &DigConfig, matches: &clap::ArgMatches) -> Result<()
     }
 }
 
-/// Print health check report
 fn print_health_report(health: &dig_core::diagnostic::HealthCheck) {
     println!("{}", "DNS Health Check Report".bold().cyan());
     println!("Domain: {}", health.domain);
     println!(
         "Status: {}",
         match health.status {
-            dig_core::diagnostic::HealthStatus::Healthy => "✓ Healthy".green(),
-            dig_core::diagnostic::HealthStatus::Warning => "⚠ Warning".yellow(),
-            dig_core::diagnostic::HealthStatus::Critical => "✗ Critical".red(),
-            dig_core::diagnostic::HealthStatus::Failed => "✗ Failed".red(),
+            dig_core::diagnostic::HealthStatus::Healthy => "[OK] Healthy".green(),
+            dig_core::diagnostic::HealthStatus::Warning => "[WARN] Warning".yellow(),
+            dig_core::diagnostic::HealthStatus::Critical => "[CRIT] Critical".red(),
+            dig_core::diagnostic::HealthStatus::Failed => "[FAIL] Failed".red(),
         }
     );
     println!();
@@ -319,10 +530,10 @@ fn print_health_report(health: &dig_core::diagnostic::HealthCheck) {
     println!("{}", "Checks:".bold());
     for check in &health.checks {
         let status = match check.status {
-            dig_core::diagnostic::CheckStatus::Pass => "✓".green(),
-            dig_core::diagnostic::CheckStatus::Warning => "⚠".yellow(),
-            dig_core::diagnostic::CheckStatus::Fail => "✗".red(),
-            dig_core::diagnostic::CheckStatus::Skip => "○".dimmed(),
+            dig_core::diagnostic::CheckStatus::Pass => "[OK]".green(),
+            dig_core::diagnostic::CheckStatus::Warning => "[WARN]".yellow(),
+            dig_core::diagnostic::CheckStatus::Fail => "[FAIL]".red(),
+            dig_core::diagnostic::CheckStatus::Skip => "[SKIP]".dimmed(),
         };
         println!("  {} {} - {}", status, check.name, check.description);
         if let Some(value) = &check.value {
@@ -335,10 +546,10 @@ fn print_health_report(health: &dig_core::diagnostic::HealthCheck) {
         println!("{}", "Issues Found:".bold().red());
         for issue in &health.issues {
             let severity = match issue.severity {
-                dig_core::diagnostic::IssueSeverity::Info => "ℹ".blue(),
-                dig_core::diagnostic::IssueSeverity::Warning => "⚠".yellow(),
-                dig_core::diagnostic::IssueSeverity::Error => "✗".red(),
-                dig_core::diagnostic::IssueSeverity::Critical => "✗".red().bold(),
+                dig_core::diagnostic::IssueSeverity::Info => "[INFO]".blue(),
+                dig_core::diagnostic::IssueSeverity::Warning => "[WARN]".yellow(),
+                dig_core::diagnostic::IssueSeverity::Error => "[ERROR]".red(),
+                dig_core::diagnostic::IssueSeverity::Critical => "[CRIT]".red().bold(),
             };
             println!(
                 "  {} [{}] {}",
@@ -361,15 +572,17 @@ fn print_health_report(health: &dig_core::diagnostic::HealthCheck) {
         println!();
         println!("{}", "Recommendations:".bold().cyan());
         for rec in &health.recommendations {
-            println!("  • {}", rec);
+            println!("  - {}", rec);
         }
     }
 }
 
-/// Run resolver comparison
 fn run_compare<'a>(
     config: &DigConfig,
     resolvers: impl Iterator<Item = &'a String>,
+    as_json: bool,
+    allow_inconsistent: bool,
+    output_file: Option<&String>,
 ) -> Result<(), DigError> {
     let resolver_list: Vec<String> = resolvers
         .map(|r| expand_resolver_alias(r.as_str()))
@@ -390,10 +603,15 @@ fn run_compare<'a>(
         Some(&config.query_type),
     ))?;
 
-    print_comparison_report(&result);
+    if as_json {
+        let data =
+            serde_json::to_value(&result).map_err(|e| DigError::QueryFailed(e.to_string()))?;
+        emit_json_envelope("compare", data, output_file)?;
+    } else {
+        print_comparison_report(&result);
+    }
 
-    // Exit with error if inconsistent
-    if !result.consistent {
+    if !allow_inconsistent && !result.consistent {
         Err(DigError::QueryFailed(
             "Resolver inconsistency detected".into(),
         ))
@@ -402,23 +620,24 @@ fn run_compare<'a>(
     }
 }
 
-/// Expand resolver aliases
 fn expand_resolver_alias(resolver: &str) -> String {
     match resolver.to_lowercase().as_str() {
         "google" => "8.8.8.8".to_string(),
         "cloudflare" => "1.1.1.1".to_string(),
         "opendns" => "208.67.222.222".to_string(),
         "quad9" => "9.9.9.9".to_string(),
-        "system" => {
-            // Return system resolver
-            // For now, use a placeholder
-            "system".to_string()
-        }
+        "system" => system_resolver_for_compare(),
         _ => resolver.to_string(),
     }
 }
 
-/// Print comparison report
+fn system_resolver_for_compare() -> String {
+    ResolverConfig::from_system()
+        .default_nameserver()
+        .map(|addr| addr.ip().to_string())
+        .unwrap_or_else(|| "8.8.8.8".to_string())
+}
+
 fn print_comparison_report(result: &dig_core::diagnostic::ComparisonResult) {
     println!("{}", "DNS Resolver Comparison".bold().cyan());
     println!("Domain: {} ({})", result.domain, result.query_type);
@@ -449,14 +668,14 @@ fn print_comparison_report(result: &dig_core::diagnostic::ComparisonResult) {
             };
 
             println!(
-                "  {} → {} ({}ms)",
+                "  {} -> {} ({}ms)",
                 resolver.cyan(),
                 resolver_result.answers.join(" ").dimmed(),
                 latency
             );
         } else {
             println!(
-                "  {} → {}",
+                "  {} -> {}",
                 resolver.red(),
                 resolver_result
                     .error
@@ -469,13 +688,16 @@ fn print_comparison_report(result: &dig_core::diagnostic::ComparisonResult) {
 
     if result.consistent {
         println!();
-        println!("{} All resolvers returned consistent results", "✓".green());
+        println!(
+            "{} All resolvers returned consistent results",
+            "[OK]".green()
+        );
     } else {
         println!();
-        println!("{} Inconsistencies detected!", "⚠".yellow().bold());
+        println!("{} Inconsistencies detected", "[WARN]".yellow().bold());
 
         for inconsistency in &result.inconsistencies {
-            println!("  • {}", inconsistency.description.yellow());
+            println!("  - {}", inconsistency.description.yellow());
             println!("    Type: {:?}", inconsistency.inconsistency_type);
             println!("    Affected: {}", inconsistency.resolvers.join(", "));
         }
@@ -493,13 +715,11 @@ fn print_comparison_report(result: &dig_core::diagnostic::ComparisonResult) {
     );
 }
 
-/// Run batch mode
 fn run_batch(file: &str, base_config: &DigConfig) -> Result<(), DigError> {
     use dig_core::batch::{BatchConfig, BatchProcessor};
 
     let batch_config = BatchConfig::default();
     let processor = BatchProcessor::new(base_config.clone(), batch_config)?;
-
     let results = processor.process_file(std::path::Path::new(file))?;
 
     for batch_result in &results {
@@ -510,7 +730,6 @@ fn run_batch(file: &str, base_config: &DigConfig) -> Result<(), DigError> {
                 println!("Status: Success");
                 println!("Time: {}ms", batch_result.exec_time_ms);
 
-                // Format output
                 let output = format_output(lookup_result, &base_config.output)?;
                 println!("{}", output);
             }
@@ -526,62 +745,52 @@ fn run_batch(file: &str, base_config: &DigConfig) -> Result<(), DigError> {
     Ok(())
 }
 
-/// Run standard query
-fn run_standard_query(config: DigConfig) -> Result<(), DigError> {
+fn run_standard_query(config: DigConfig, output_file: Option<&String>) -> Result<(), DigError> {
     let lookup = DigLookup::new(config);
 
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| DigError::ConfigError(format!("Failed to create runtime: {}", e)))?;
 
     let result = rt.block_on(lookup.lookup())?;
-
-    // Format and print output
     let config = lookup.config();
     let output = format_output(&result, &config.output)?;
-
+    write_output(output_file, &output)?;
     print!("{}", output);
-
     Ok(())
 }
 
-/// Build DigConfig from CLI arguments
-fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
+fn build_config(
+    matches: &ArgMatches,
+    args_key: &str,
+    require_name: bool,
+) -> Result<DigConfig, DigError> {
     let mut config = DigConfig::default();
 
-    // Parse arguments manually to handle [@server] [name] [type] order
-    if let Some(args) = matches.get_many::<String>("args") {
-        let args: Vec<&String> = args.collect();
-
-        for arg in &args {
+    if let Some(args) = matches.get_many::<String>(args_key) {
+        for arg in args {
             if arg.starts_with('@') {
-                // Server argument
                 if let Some(server_config) = ServerConfig::parse(arg) {
                     config.servers.push(server_config);
                     config.use_system_servers = false;
                 }
             } else if config.name.is_empty() {
-                // First non-@ argument is the domain name
-                config.name = (**arg).clone();
-            } else {
-                // Second non-@ argument is the query type
-                config.query_type = (**arg).clone();
+                config.name = arg.clone();
+            } else if config.query_type == "A" {
+                config.query_type = arg.clone();
             }
         }
     }
 
-    // Set default query type if name is set but type is not
-    if !config.name.is_empty() && config.query_type == "A" {
-        // Keep the default A type
+    if let Some(reverse_ip) = matches.get_one::<String>("reverse") {
+        config = config.with_reverse(reverse_ip.clone());
     }
 
-    // Parse class
     if let Some(class) = matches.get_one::<String>("class") {
         config.query_class = class
             .parse()
             .map_err(|_| DigError::ConfigError(format!("Invalid class: {}", class)))?;
     }
 
-    // Parse transport options
     if matches.get_flag("ipv4") {
         config.ipv4 = true;
     }
@@ -598,7 +807,6 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
         config.transport = Transport::Https;
     }
 
-    // Parse port
     if let Some(port) = matches.get_one::<String>("port") {
         let port: u16 = port
             .parse()
@@ -608,7 +816,6 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
         }
     }
 
-    // Parse timeout
     if let Some(timeout) = matches.get_one::<String>("timeout") {
         let timeout: u64 = timeout
             .parse()
@@ -616,14 +823,12 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
         config.timeout = Duration::from_secs(timeout);
     }
 
-    // Parse retries
     if let Some(retries) = matches.get_one::<String>("retries") {
         config.retries = retries
             .parse()
             .map_err(|_| DigError::ConfigError(format!("Invalid retries: {}", retries)))?;
     }
 
-    // Parse output options
     if matches.get_flag("short") {
         config.output.format = OutputFormat::Short;
         config.output.comments = false;
@@ -634,7 +839,6 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
         config.output.format = OutputFormat::Table;
     }
 
-    // Parse section visibility
     if matches.get_flag("no-comments") {
         config.output.comments = false;
     }
@@ -642,7 +846,6 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
         config.output.stats = false;
     }
 
-    // Parse plus options
     if matches.get_flag("trace") {
         config.trace = true;
     }
@@ -654,11 +857,9 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
         config.recurse = false;
     }
 
-    // Validate configuration
-    if config.name.is_empty() {
+    if require_name && config.name.is_empty() {
         return Err(DigError::ConfigError(
-            "No domain name specified. \
-            Usage: dig-rs <domain> [--json] [--health] [--compare RESOLVERS...]"
+            "No domain name specified. Use `dig-rs query <domain>` or legacy `dig-rs <domain>`."
                 .into(),
         ));
     }
@@ -666,7 +867,6 @@ fn build_config(matches: &clap::ArgMatches) -> Result<DigConfig, DigError> {
     Ok(config)
 }
 
-/// Format output based on configuration
 fn format_output(
     result: &dig_core::lookup::LookupResult,
     output_config: &dig_core::config::OutputConfig,
@@ -688,7 +888,6 @@ fn format_output(
                 .map_err(|e| DigError::QueryFailed(e.to_string()))
         }
         OutputFormat::Json => {
-            // Use structured JSON formatter
             let formatter = StructuredFormatter::new();
             formatter
                 .format_lookup(result)
@@ -716,8 +915,7 @@ fn format_output(
     }
 }
 
-/// Run trace mode
-fn run_trace(config: DigConfig) -> Result<(), DigError> {
+fn run_trace(config: DigConfig, output_file: Option<&String>) -> Result<(), DigError> {
     let trace = DnsTrace::new(config.clone());
 
     let rt = tokio::runtime::Runtime::new()
@@ -725,7 +923,13 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
 
     let result = rt.block_on(trace.trace())?;
 
-    // Print trace results with enhanced formatting
+    if config.output.format == OutputFormat::Json {
+        let data =
+            serde_json::to_value(&result).map_err(|e| DigError::QueryFailed(e.to_string()))?;
+        emit_json_envelope("trace", data, output_file)?;
+        return Ok(());
+    }
+
     println!("{}", "DNS Trace Results".bold().cyan());
     println!("Query: {} ({})", result.query_name, result.query_type);
     println!("Total time: {}ms", result.total_time_ms);
@@ -741,12 +945,10 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
             step.server_type.cyan()
         );
 
-        // Show zone if available
         if let Some(zone) = &step.zone {
             println!("     Zone: {}", zone.dimmed());
         }
 
-        // Show timing with color coding
         let time = step.query_time_ms;
         let time_str = if time < 50 {
             format!("{}ms", time).green()
@@ -757,31 +959,27 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
         };
         println!("     Time: {}", time_str);
 
-        // Show response status
         let status = if step.response.rcode == "NoError" {
-            "✓".green()
+            "[OK]".green()
         } else {
-            "✗".red()
+            "[FAIL]".red()
         };
         println!("     Status: {} {}", status, step.response.rcode);
 
-        // Show answer if present
         if !step.response.answer.is_empty() {
             println!("     {}", "Answer:".bold());
             for a in &step.response.answer {
-                println!("       • {}", a);
+                println!("       - {}", a);
             }
         }
 
-        // Show authority/referral
         if !step.response.authority.is_empty() {
             println!("     {}", "Referral:".bold());
             for a in &step.response.authority {
-                println!("       → {}", a);
+                println!("       -> {}", a);
             }
         }
 
-        // Show additional/glue records
         if !step.response.additional.is_empty() {
             println!("     {}", "Glue:".bold());
             for a in &step.response.additional {
@@ -792,7 +990,6 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
         println!();
     }
 
-    // Summary statistics
     println!("{}", "Summary".bold().cyan());
     let total_time = result.total_time_ms;
     let avg_time = if result.steps.is_empty() {
@@ -818,7 +1015,6 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
         println!("  Records: {}", final_answer.message.answer.len());
         println!("  Server: {}", final_answer.server);
 
-        // Show actual answer records
         if !final_answer.message.answer.is_empty() {
             println!();
             for record in &final_answer.message.answer {
@@ -834,6 +1030,59 @@ fn run_trace(config: DigConfig) -> Result<(), DigError> {
     }
 
     println!(";; Total trace time: {}ms", result.total_time_ms);
-
     Ok(())
+}
+
+fn emit_json_envelope(
+    mode: &str,
+    data: serde_json::Value,
+    output_file: Option<&String>,
+) -> Result<(), DigError> {
+    let payload = serde_json::json!({
+        "schema_version": SCHEMA_VERSION,
+        "mode": mode,
+        "generated_at_unix_ms": unix_ms_now(),
+        "data": data
+    });
+    let json =
+        serde_json::to_string_pretty(&payload).map_err(|e| DigError::QueryFailed(e.to_string()))?;
+    write_output(output_file, &json)?;
+    println!("{}", json);
+    Ok(())
+}
+
+fn unix_ms_now() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+fn write_output(output_file: Option<&String>, content: &str) -> Result<(), DigError> {
+    if let Some(path) = output_file {
+        std::fs::write(path, content).map_err(|e| {
+            DigError::ConfigError(format!("Failed to write output file {}: {}", path, e))
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compare_alias_known_presets() {
+        assert_eq!(expand_resolver_alias("google"), "8.8.8.8");
+        assert_eq!(expand_resolver_alias("cloudflare"), "1.1.1.1");
+        assert_eq!(expand_resolver_alias("opendns"), "208.67.222.222");
+        assert_eq!(expand_resolver_alias("quad9"), "9.9.9.9");
+    }
+
+    #[test]
+    fn compare_alias_system_resolves_to_address_like_value() {
+        let value = expand_resolver_alias("system");
+        assert_ne!(value, "system");
+        assert!(!value.trim().is_empty());
+    }
 }

@@ -3,12 +3,14 @@
 //! Cross-platform resolver configuration reading
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::Path;
 use std::time::Duration;
 
-use tracing::{debug, warn};
-
 use crate::error::{DigError, Result};
+
+#[cfg(unix)]
+use std::path::Path;
+#[cfg(unix)]
+use tracing::{debug, warn};
 
 /// DNS resolver configuration
 #[derive(Debug, Clone)]
@@ -234,6 +236,7 @@ impl ResolverConfig {
 }
 
 /// Parse a nameserver address from resolv.conf
+#[cfg(any(unix, test))]
 fn parse_nameserver(s: &str) -> std::result::Result<SocketAddr, String> {
     let s = s.trim();
 
@@ -264,36 +267,7 @@ fn get_windows_dns_servers() -> Result<Vec<SocketAddr>> {
         .map_err(|e| DigError::ConfigError(format!("Failed to get Windows DNS servers: {}", e)))?;
 
     if !output.status.success() {
-        // Fallback to ipconfig
-        let output = Command::new("ipconfig")
-            .args(["/all"])
-            .output()
-            .map_err(|e| DigError::ConfigError(format!("Failed to run ipconfig: {}", e)))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut servers = Vec::new();
-
-        for line in stdout.lines() {
-            let line = line.trim();
-            if line.contains("DNS Servers") || line.contains("DNS 服务器") {
-                if let Some(addr_str) = line.split(':').nth(1) {
-                    let addr_str = addr_str.trim();
-                    if let Ok(ip) = addr_str.parse::<IpAddr>() {
-                        servers.push(SocketAddr::new(ip, 53));
-                    }
-                }
-            }
-        }
-
-        if servers.is_empty() {
-            // Use default DNS servers
-            servers = vec![
-                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53),
-                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)), 53),
-            ];
-        }
-
-        return Ok(servers);
+        return get_windows_dns_servers_from_ipconfig();
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -314,6 +288,62 @@ fn get_windows_dns_servers() -> Result<Vec<SocketAddr>> {
     }
 
     Ok(servers)
+}
+
+#[cfg(windows)]
+fn get_windows_dns_servers_from_ipconfig() -> Result<Vec<SocketAddr>> {
+    use std::collections::BTreeSet;
+    use std::process::Command;
+
+    let output = Command::new("ipconfig")
+        .args(["/all"])
+        .output()
+        .map_err(|e| DigError::ConfigError(format!("Failed to run ipconfig: {}", e)))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut dedup = BTreeSet::new();
+    let mut in_dns_block = false;
+
+    for raw_line in stdout.lines() {
+        let line = raw_line.trim_end();
+        let trimmed = line.trim();
+
+        // Handles both English and localized output lines such as `DNS Servers . . . :`.
+        if trimmed.ends_with(':') && trimmed.contains("DNS") {
+            in_dns_block = true;
+            if let Some(addr_str) = trimmed.split(':').nth(1) {
+                if let Ok(ip) = addr_str.trim().parse::<IpAddr>() {
+                    dedup.insert(SocketAddr::new(ip, 53));
+                }
+            }
+            continue;
+        }
+
+        if in_dns_block {
+            if trimmed.is_empty() {
+                in_dns_block = false;
+                continue;
+            }
+
+            if let Ok(ip) = trimmed.parse::<IpAddr>() {
+                dedup.insert(SocketAddr::new(ip, 53));
+                continue;
+            }
+
+            if !raw_line.starts_with(' ') && !raw_line.starts_with('\t') {
+                in_dns_block = false;
+            }
+        }
+    }
+
+    if dedup.is_empty() {
+        return Ok(vec![
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)), 53),
+        ]);
+    }
+
+    Ok(dedup.into_iter().collect())
 }
 
 #[cfg(not(windows))]

@@ -779,6 +779,17 @@ fn check_consistency(results: &[ResolverResult], inconsistencies: &mut Vec<Incon
         .map(|r| r.resolver.clone())
         .collect();
 
+    // If all resolvers failed, this is an outright failure and cannot be considered consistent.
+    if !failed_resolvers.is_empty() && failed_resolvers.len() == results.len() {
+        inconsistencies.push(Inconsistency {
+            inconsistency_type: InconsistencyType::PartialFailure,
+            description: "All resolvers failed".to_string(),
+            resolvers: failed_resolvers,
+            details: None,
+        });
+        return false;
+    }
+
     if !failed_resolvers.is_empty() && failed_resolvers.len() < results.len() {
         inconsistencies.push(Inconsistency {
             inconsistency_type: InconsistencyType::PartialFailure,
@@ -1101,5 +1112,32 @@ mod tests {
             inconsistency.inconsistency_type,
             InconsistencyType::DifferentAnswers
         );
+    }
+
+    #[test]
+    fn test_check_consistency_all_failed_is_not_consistent() {
+        let mut inconsistencies = Vec::new();
+        let results = vec![
+            ResolverResult {
+                resolver: "8.8.8.8".to_string(),
+                success: false,
+                latency_ms: 100,
+                answers: Vec::new(),
+                rcode: "FAILED".to_string(),
+                error: Some("timeout".to_string()),
+            },
+            ResolverResult {
+                resolver: "1.1.1.1".to_string(),
+                success: false,
+                latency_ms: 120,
+                answers: Vec::new(),
+                rcode: "FAILED".to_string(),
+                error: Some("timeout".to_string()),
+            },
+        ];
+
+        let consistent = check_consistency(&results, &mut inconsistencies);
+        assert!(!consistent);
+        assert!(!inconsistencies.is_empty());
     }
 }
